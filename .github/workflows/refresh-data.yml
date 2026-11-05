@@ -1,0 +1,44 @@
+name: Refresh data
+
+on:
+  schedule:
+    # Mondays 04:00 UTC
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Rebuild calendar + daily prices
+        run: npm run data:events
+
+      - name: Rebuild hourly prices
+        run: npm run data:hourly
+
+      - name: Refit model and write site artifacts
+        run: npm run build
+
+      - name: Commit updated artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data
+          if git diff --cached --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "chore: refresh market data and model [skip ci]"
+            git push
+          fi

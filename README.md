@@ -134,6 +134,15 @@ site needs) **is** committed, so the deployed site works without a build step.
 
 No environment variables or secrets are required.
 
+### Keeping data current
+
+The live calendar updates itself every time someone opens the page. The bundled
+snapshot (used as a fallback and for the backtest table) is refreshed by the
+**Refresh data** workflow (`.github/workflows/refresh-data.yml`), which runs
+weekly and commits the updated `public/data/*.json`. Trigger it manually from the
+Actions tab any time. To enable Vercel auto-deploy on data commits, turn off
+"Ignored Build Step" for the `[skip ci]` commits or run the workflow without it.
+
 ## Regenerating the model
 
 The model is data-driven. To incorporate new releases, re-run
