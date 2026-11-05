@@ -1,0 +1,18 @@
+{
+  "name": "fx-fundamental-signals",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Event-driven forex buy/sell signals from economic releases (NFP, CPI, PPI, FOMC, rate decisions) with walk-forward backtested accuracy.",
+  "scripts": {
+    "data:events": "node tools/build-data.mjs --from 2014-01-01",
+    "data:hourly": "node tools/build-hourly.mjs",
+    "data:model": "node tools/build-model.mjs",
+    "data:site": "node tools/build-site-data.mjs",
+    "build": "npm run data:model && npm run data:site",
+    "backtest": "node tools/backtest-learned.mjs && node tools/backtest-fade.mjs",
+    "dev": "npx --yes serve public -l 3000",
+    "start": "npx --yes serve public -l 3000"
+  },
+  "engines": { "node": ">=18" }
+}

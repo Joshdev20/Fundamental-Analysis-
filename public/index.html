@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FX Fundamental Signals</title>
+  <meta name="description" content="Event-driven forex buy/sell signals from economic releases (NFP, CPI, PPI, FOMC, rate decisions) with walk-forward backtested accuracy." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">FX</span>
+      <div>
+        <h1>Fundamental Signals</h1>
+        <p class="sub">Event-driven buy/sell calls from economic releases</p>
+      </div>
+    </div>
+    <div class="status">
+      <span id="live-dot" class="dot"></span>
+      <span id="status-text">Loading…</span>
+      <span id="updated" class="muted"></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="kpis" id="kpis"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Live Signals</h2>
+        <div class="controls">
+          <label>Window
+            <select id="window-days">
+              <option value="2">2 days</option>
+              <option value="3" selected>3 days</option>
+              <option value="5">5 days</option>
+              <option value="7">7 days</option>
+            </select>
+          </label>
+          <label>Hold
+            <select id="horizon-days">
+              <option value="1">1 day</option>
+              <option value="3">3 days</option>
+              <option value="5" selected>5 days</option>
+            </select>
+          </label>
+          <label>Min strength
+            <select id="min-score">
+              <option value="1">1 bp</option>
+              <option value="2" selected>2 bp</option>
+              <option value="4">4 bp</option>
+              <option value="8">8 bp</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="proven-only" /> Proven edge only</label>
+        </div>
+      </div>
+      <div id="signals" class="signals"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Economic Calendar</h2>
+        <div class="controls">
+          <label class="check"><input type="checkbox" id="only-high" checked /> High impact only</label>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="calendar">
+          <thead>
+            <tr><th>Time</th><th>Cur</th><th>Event</th><th>Actual</th><th>Forecast</th><th>Previous</th><th>Surprise</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Backtested Accuracy</h2><span class="muted" id="bt-range"></span></div>
+      <p class="note" id="bt-note"></p>
+      <div id="backtest"></div>
+    </section>
+
+    <section class="panel methodology">
+      <h2>How it works</h2>
+      <ol>
+        <li><b>Surprise.</b> For each release we compute <code>actual − forecast</code> and normalise it by that indicator's own historical surprise volatility, giving a z-score.</li>
+        <li><b>Learned response.</b> We measure, per event type and currency, how the currency historically moved (in basis points) per unit of surprise. The fitted slope is the directional edge — it is learned from data, not assumed.</li>
+        <li><b>Pair mapping.</b> A bullish shock to a currency pushes pairs where it is the base up, and pairs where it is the quote down.</li>
+        <li><b>Honest evaluation.</b> Everything is walk-forward: a signal for year Y only uses data from years before Y. Confidence is anchored to the measured win rate of the matching bucket.</li>
+      </ol>
+      <p class="note">Honest limitations: intraday post-release trading of liquid majors is close to efficient. The durable, measurable edge sits in (a) large surprises (|z| ≥ 2.5) where price over-reacts and partially reverses over the following days, and (b) specific event types such as rate decisions and growth releases. This tool surfaces those, with the historical sample size shown for every claim.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p><b>Not financial advice.</b> Signals are statistical estimates from historical data and can be wrong. Backtests are not a guarantee of future results. Trade at your own risk.</p>
+    <p class="muted">Data: TradingView economic calendar, Yahoo Finance FX prices. Signals recompute in your browser from the live calendar.</p>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

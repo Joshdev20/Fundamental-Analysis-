@@ -1,0 +1,9 @@
+node_modules/
+.vercel/
+.DS_Store
+*.log
+
+# Raw datasets are regenerated with `npm run data:events` / `data:hourly`.
+# They are large (tens of MB) and not needed for the deployed site.
+# Only the top-level data/ dir is ignored; public/data/ ships with the site.
+/data/
