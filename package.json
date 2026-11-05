@@ -11,8 +11,8 @@
     "data:site": "node tools/build-site-data.mjs",
     "build": "npm run data:model && npm run data:site",
     "backtest": "node tools/backtest-learned.mjs && node tools/backtest-fade.mjs",
-    "dev": "npx --yes serve public -l 3000",
-    "start": "npx --yes serve public -l 3000"
+    "dev": "node tools/dev-server.mjs 3000",
+    "start": "node tools/dev-server.mjs 3000"
   },
   "engines": { "node": ">=18" }
 }
