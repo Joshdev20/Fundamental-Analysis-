@@ -139,7 +139,7 @@ export function eventPairDirection(event, pair, model, opts) {
 //
 // `edge: false` and `provisional: true` travel with every one of these signals so
 // the UI cannot quietly promote them to the same footing as a post-release call.
-export function buildForecastSignals(events, model, { asOf = Date.now(), lookaheadDays = 7, horizonDays = 5, minScoreBps = 2, minZ = 1 } = {}) {
+export function buildForecastSignals(events, model, { asOf = Date.now(), lookaheadDays = 7, horizonDays = 5, minScoreBps = 2, minZ = 1, bars = null, msnr = null, msnrOptions = {} } = {}) {
   const soon = asOf + lookaheadDays * 86400000;
   const stats = model.forecastStats || {};
   const candidates = [];
@@ -151,6 +151,7 @@ export function buildForecastSignals(events, model, { asOf = Date.now(), lookahe
     if (!s || !s.sigma || s.n < MIN_STATS_N) continue;
     const zf = clamp((e.forecast - e.previous) / s.sigma, -3, 3);
     if (Math.abs(zf) < minZ) continue;
+    if (e.forecast === e.previous) continue;
     candidates.push({ e, zf });
   }
 
@@ -178,6 +179,33 @@ export function buildForecastSignals(events, model, { asOf = Date.now(), lookahe
     if (Math.abs(score) < minScoreBps) continue;
     drivers.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
     const top = drivers[0];
+    const action = score > 0 ? 'BUY' : 'SELL';
+
+    // A pre-release order, priced off the last daily bar. This is what makes the
+    // forecast actionable: a stop and a limit at the levels the break would run
+    // through, so the order is already resting when the number prints.
+    const series = bars && msnr ? bars[pair.symbol] : null;
+    const planFor = (dir) => {
+      if (!series || series.length <= 60) return null;
+      const res = msnr.plan(series, dir, { ...msnrOptions, symbol: pair.symbol });
+      return res && res.ok ? res.plan : null;
+    };
+    const plan = planFor(score > 0 ? 1 : -1);
+
+    // Per-release orders. A release that is not the pair's biggest driver still
+    // deserves its own card entry, so each driver gets an order in *its own*
+    // direction rather than the net one. Without this NFP showed no prediction at
+    // all whenever a larger same-currency release shared the week.
+    const releaseOrders = drivers.map((d) => ({
+      title: d.title,
+      ts: d.ts,
+      symbol: pair.symbol,
+      label: pair.label,
+      action: d.direction > 0 ? 'BUY' : 'SELL',
+      direction: d.direction,
+      contribution: d.contribution,
+      plan: planFor(d.direction),
+    }));
 
     signals.push({
       symbol: pair.symbol,
@@ -185,8 +213,8 @@ export function buildForecastSignals(events, model, { asOf = Date.now(), lookahe
       kind: pair.kind,
       base: pair.base,
       quote: pair.quote,
-      action: score > 0 ? 'BUY' : 'SELL',
-      fundAction: score > 0 ? 'BUY' : 'SELL',
+      action,
+      fundAction: action,
       techAction: null,
       newsType: top.newsType || newsTypeOf(top.tag),
       release: top.title,
@@ -202,10 +230,11 @@ export function buildForecastSignals(events, model, { asOf = Date.now(), lookahe
       fundOk: false,
       techOk: false,
       conflict: false,
-      plan: null,
+      plan,
       tech: null,
       top,
       drivers,
+      releaseOrders,
     });
   }
   signals.sort((a, b) => (a.scheduledAt || 0) - (b.scheduledAt || 0) || b.confidence - a.confidence);

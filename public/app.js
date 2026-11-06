@@ -91,6 +91,7 @@ function normalize(r) {
     title: r.title || r.event || 'Event',
     indicator: r.indicator || r.title || '',
     currency: (r.currency || r.country || '').toUpperCase().slice(0, 3),
+    country: r.country || '',
     importance: r.importance ?? r.impact ?? 0,
     ts,
     actual: num(r.actualRaw ?? r.actual),
@@ -167,19 +168,45 @@ function renderUpcoming() {
     const { tag } = classifyTitle(e.title, e.indicator);
     const f = e.forecast == null ? '—' : e.forecast;
     const p = e.previous == null ? '—' : e.previous;
-    const lean = (leans.get(`${e.title}|${e.ts}`) || [])[0];
-    const leanBlock = lean
+    // Every forecast signal that lists this release as a driver, not just the
+    // pair whose top driver it was. NFP is a driver on 28 pairs but the top
+    // driver on almost none, so keying off the top driver alone left its card
+    // blank.
+    const rowsFor = [];
+    for (const s of state.forecastSignals || []) {
+      for (const ro of s.releaseOrders || []) {
+        if (ro.title === e.title && ro.ts === e.ts) rowsFor.push(ro);
+      }
+    }
+    const dp = (v) => (v >= 100 ? +v.toFixed(2) : v >= 1 ? +v.toFixed(4) : +v.toFixed(5));
+    const seenSym = new Set();
+    const orderRows = rowsFor
+      .filter((x) => x.plan && !seenSym.has(x.symbol) && seenSym.add(x.symbol))
+      .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+      .slice(0, 6)
+      .map((x) => {
+        const q = state.quotes[x.symbol];
+        const now = q && q.price ? ` <span class="dim">now ${dp(q.price)}</span>` : '';
+        return `<div class="order-line">
+          <span class="lean ${x.action === 'BUY' ? 'up' : 'down'}">${x.action}</span>
+          <b>${esc(x.label)}</b>
+          <span class="dim">${esc(x.plan.order)} ${dp(x.plan.entry)} · SL ${dp(x.plan.stop)} · TP ${dp(x.plan.take)} (${x.plan.rr}R)</span>${now}
+        </div>`;
+      })
+      .join('');
+    const moved = e.forecast != null && e.previous != null && e.forecast !== e.previous;
+    const leanBlock = moved
       ? `<div class="lane-body">
           <span class="news-type">${esc(newsTypeLabel(tag))}</span>
-          <span class="lean ${lean.action === 'BUY' ? 'up' : 'down'}">consensus leans ${lean.action}</span>
-          <span class="dim">e.g. ${esc(lean.label)}</span>
+          <span>consensus ${esc(String(f))} · previous ${esc(String(p))}</span>
         </div>
-        <p class="hint">Pre-release lean from the consensus vs the previous print (${lean.top.z > 0 ? '+' : ''}${lean.top.z.toFixed(1)}σ). <b>Not backtested</b> — the consensus alone has no measured edge here. The traded call is the post-release one.</p>`
+        ${orderRows ? `<div class="orders">${orderRows}</div>` : ''}
+        <p class="hint">Orders rest at these levels before the print. <b>Not backtested</b> — the consensus alone has no measured edge here, so treat this as a plan, not a proven call. The validated call is the post-release one.</p>`
       : `<div class="lane-body">
           <span class="news-type">${esc(newsTypeLabel(tag))}</span>
           <span>consensus ${esc(String(f))} · previous ${esc(String(p))}</span>
         </div>
-        <p class="hint">No consensus lean: the consensus moved less than one standard deviation from the previous print, so there is no direction to lean on.</p>`;
+        <p class="hint">No prediction: the consensus is unchanged from the previous print, so there is no direction to lean on.</p>`;
     return `<div class="sig upcoming">
       <div class="sig-head">
         <div><span class="sym">${esc(e.title)}</span> <span class="kind">${esc(e.currency)}</span></div>
@@ -301,11 +328,11 @@ function renderSignals() {
       const dp = (v) => (v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(4) : v.toFixed(5));
       const order = p.order ? `<span class="order">${esc(p.order)}</span>` : '';
       const pipLine = p.pips ? `<div class="sig-row"><span class="lbl">Distances</span><span class="sig-meta">stop ${p.pips.sl} pips · target ${p.pips.tp} pips</span></div>` : '';
-      const isTrigger = p.kind === 'confirm' || p.kind === 'fib';
+      const isTrigger = p.kind === 'confirm' || p.kind === 'fib' || p.kind === 'limit';
       const currentRow = isTrigger && p.current
-        ? `<div class="sig-row"><span class="lbl">Now</span><span class="sig-meta">${dp(p.current)}${p.current !== p.entry ? ` · ${x.action === 'BUY' ? (p.current < p.entry ? 'waiting for the break up' : 'trigger already met') : (p.current > p.entry ? 'waiting for the break down' : 'trigger already met')}` : ''}</span></div>`
+        ? `<div class="sig-row"><span class="lbl">Now</span><span class="sig-meta">${dp(p.current)}${p.current !== p.entry ? ` · ${x.action === 'BUY' ? (p.current < p.entry ? 'waiting for the break up' : 'break met — fill on the retest') : (p.current > p.entry ? 'waiting for the break down' : 'break met — fill on the retest')}` : ''}</span></div>`
         : '';
-      const entryLabel = p.kind === 'confirm' ? 'Trigger' : p.kind === 'fib' ? 'Limit' : 'Entry';
+      const entryLabel = p.kind === 'confirm' ? 'Trigger' : (p.kind === 'fib' || p.kind === 'limit') ? 'Limit' : 'Entry';
       const liveTag = p.live ? ' (live)' : isTrigger && p.current ? ' (fixed)' : '';
       planBlock = `<div class="plan">
         <div class="plan-cell"><span class="lbl">${entryLabel}${liveTag}</span><b>${dp(p.entry)}</b></div>
@@ -725,6 +752,7 @@ function wire() {
   $('#msnr-on').addEventListener('change', (e) => { state.msnrOn = e.target.checked; refreshSignals(); renderAll(); });
   $('#msnr-require').addEventListener('change', (e) => { state.msnrRequire = e.target.checked; refreshSignals(); renderAll(); });
   $('#stop-profile')?.addEventListener('change', (e) => { state.stopProfile = e.target.value; refreshSignals(); renderAll(); });
+  $('#order-type')?.addEventListener('change', (e) => { state.entryStyle = e.target.value; refreshSignals(); renderAll(); });
   $('#sl-pips').addEventListener('change', (e) => { state.pip.slPips = +e.target.value; refreshSignals(); renderAll(); });
   $('#tp-pips').addEventListener('change', (e) => { state.pip.tpPips = +e.target.value; refreshSignals(); renderAll(); });
   $('#sl-atr').addEventListener('change', (e) => { state.pip.slAtr = +e.target.value; refreshSignals(); renderAll(); });
@@ -794,7 +822,13 @@ function refreshSignals() {
     asOf: state.asOf,
     lookaheadDays: state.forecastLookahead,
     minScoreBps: state.minScoreBps,
-    minZ: 1,
+    // Any real consensus move produces a prediction. Requiring a large z here
+    // would leave the marquee events blank: this NFP's consensus change is only
+    // +0.4 sigma, and a 1-sigma gate showed nothing for it.
+    minZ: 0.1,
+    bars: state.msnrOn ? state.bars : null,
+    msnr: state.msnrOn ? state.msnr : null,
+    msnrOptions: { planStyle: state.entryStyle, minConfluence: 0, horizon: 5, requireStructure: false, minRR: 1, maxRiskPct: 3, ...state.pip },
   });
 }
 

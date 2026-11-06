@@ -353,6 +353,17 @@ footer b { color: var(--ink); }
 .sig.upcoming .lean.up { color: var(--up); }
 .sig.upcoming .lean.down { color: var(--down); }
 .sig.upcoming .hint b { color: var(--ink); font-weight: 600; }
+.sig.upcoming .orders { display: flex; flex-direction: column; gap: 3px; margin: 6px 0 0; }
+.sig.upcoming .order-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.sig.upcoming .order-line .dim { color: var(--dim); }
 
 /* Plain-English verdict on each call */
 .verdict { margin: 8px 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink); opacity: .9; }

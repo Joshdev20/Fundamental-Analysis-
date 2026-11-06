@@ -236,6 +236,7 @@ produced.
 |---|---|---|---|---|---|
 | Fundamentals + chart, **confirmation stop** | big surprise, chart agrees, entry waits for a 0.25 ATR break of the release bar | 620 | **61.2%** | 1.54 | +0.206R |
 | Fundamentals + chart, market entry | big surprise and the chart agrees, fill at the release-bar close | 832 | 54.0% | 1.18 | +0.078R |
+| Fundamentals + chart, **limit on the retest** | as above but the entry is a limit at the break level | 465 | 42.0% | 0.72 | −0.157R |
 | Fundamentals + chart, category filter | big surprise **and** the chart agrees **and** the news type has a proven prior record | 273 | 58.7% | 1.43 | +0.175R |
 | APA `trend+fvg`, 1:0.5 target | structure + imbalance, tiny target | 10,150 | 64.5% | 0.87 | −0.046R |
 | TNC key levels, short side | A-shaped level or bearish OCL, 1:1 | 35,199 | 52.1% | 1.08 | +0.04R |
@@ -277,24 +278,49 @@ the live price next to the trigger so you can see whether the break has happened
 
 Both entry styles are measured by `tools/backtest-msnr.mjs` (`npm run data:msnr`).
 
-### Pre-release leans — shown, but not a call
+### Pre-release predictions — what the consensus can and cannot say
 
-The platform can say something *before* a release prints, which is what you
-actually need for NFP. `buildForecastSignals` reads the consensus against the
-previous print and states a direction on the Upcoming panel, so the calendar
-carries a lean instead of going silent until the number lands.
+You asked for a signal *before* the print, and the platform now gives you one.
+Every upcoming release whose consensus differs from the previous print gets a
+direction and resting orders on the affected pairs:
 
-**This is not backtested, and the panel says so.** The consensus-change direction
-has no measured directional edge on this data: the signalled direction hit 49-52%
-across 1, 3, 5 and 10-day holds on 41,000 high-importance releases, and it gets
-*worse* as the consensus change grows — a 2-3σ consensus change returned **-18bp
-over ten days**. Fading it is not an edge either (PF 1.06-1.22 on thin samples).
-The one consistent effect is a small drift continuation, which is exactly what the
-confirmation-stop entry captures *after* the print.
+    SELL EUR/USD   SELL STOP 1.1208 · SL 1.1254 · TP 1.1162 (1R)
+    BUY  USD/JPY   BUY  STOP 157.92 · SL 157.19 · TP 158.65 (1R)
 
-So the lean is a heads-up, not a call: it is rendered in a muted dashed style,
-tagged `provisional`, and kept in its own list so it can never be counted in the
-validated ledger. The traded call remains the post-release one.
+The order type follows the selector: a **stop** resting at the break level, a
+**limit** at the same level filled on a retest, or a market fill.
+
+**Read the numbers before trading this.** Measured pre-release, on 10,394
+high-importance events (consensus move at least 1σ, 5-day horizon, 1:1):
+
+| Pre-release entry | n | Win | PF | Expectancy | Profitable years |
+|---|---|---|---|---|---|
+| Stop, as signalled | 7,163 | 57.2% | 1.33 | +0.137R | 12/13 |
+| Stop, direction **faded** | 7,248 | **59.0%** | **1.44** | +0.173R | 12/13 |
+| Limit, as signalled | 5,430 | 37.3% | 0.61 | −0.235R | 1/13 |
+| Limit, direction faded | 5,360 | 38.9% | 0.64 | −0.211R | 0/13 |
+
+The faded row is the important one. Reversing the forecast direction scores
+*higher* than following it, which means the 57.2% is **not** the forecast being
+right — it is the breakout mechanic being profitable on its own. If the consensus
+direction carried information, fading it would lose. It does not.
+
+So: the orders are real and the win rate is real, but the *reason* is the
+post-release drift the stop entry captures, not the forecast. The direction is
+still shown because it is the natural reading of the consensus, and the card says
+this in as many words. It is kept out of the validated ledger, which counts only
+post-release calls.
+
+Fading it is not a strategy either: 59.0% against 57.2% is inside noise, and the
+limit rows show the whole pre-release structure is fragile to the entry.
+
+### Limit orders
+
+A limit order is available and selectable. Placed at the break level and filled
+only on a retest, it scores **42.0% with 2 of 12 profitable years** against the
+stop's 61.2% and 11 of 12 (`npm run data:msnr`, the `limit` goal). It is built
+because it is a legitimate way to trade a break and you asked for it, and the
+number is stated rather than hidden — but the app does not default to it.
 
 ### Which news type each call came from
 

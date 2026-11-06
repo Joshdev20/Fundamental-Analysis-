@@ -129,6 +129,13 @@
             <label class="toggle"><input type="checkbox" id="proven-only" /><span>Proven edge only</span></label>
           </div>
           <div class="controls">
+            <label>Order type
+              <select id="order-type">
+                <option value="confirm" selected>Stop — fill on the break</option>
+                <option value="limit">Limit — fill on the retest</option>
+                <option value="pip">Market — fill at the close</option>
+              </select>
+            </label>
             <label>Stop (pips)
               <select id="sl-pips">
                 <option value="15">15</option>

@@ -19,7 +19,7 @@ import { pairDirection, pairsForCurrency, bucketOf } from '../public/lib/pairs.m
 import { barAtOrAfter } from '../lib/bars.mjs';
 import { attachZ } from '../lib/response.mjs';
 import { buildContext, alchemist } from '../public/lib/alchemist.mjs';
-import { resolvePlan, resolveConfirmation } from '../public/lib/msnr.mjs';
+import { resolvePlan, resolveConfirmation, resolveLimitEntry } from '../public/lib/msnr.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.resolve(__dirname, '..', 'data');
@@ -33,6 +33,10 @@ const GOALS = {
   // before filling, rather than buying the close of the spike. Order is cancelled
   // if the break never comes.
   confirmation: { label: 'Confirmation stop (0.25 ATR break, 1:1)', planStyle: 'confirm', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5, confirmAtr: 0.25, confirmWindow: 3 },
+  // Limit entry at the same break level, filled only on a retest. Offered as a
+  // selectable order type; measured lower than the stop entry, and shown here so
+  // the comparison is reproducible rather than asserted.
+  limit: { label: 'Limit on the retest (1:1)', planStyle: 'limit', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5, confirmAtr: 0.25, confirmWindow: 3, retestWindow: 3 },
 };
 const GATE = { minConfluence: 4, requireStructure: true, minZ: 2 };
 
@@ -91,14 +95,18 @@ function summarize(rows) {
 function backtest(goal, filter) {
   const trades = [];
   let cancelled = 0;
+  let unfilled = 0;
   for (const c of cands) {
     if (filter && !filter(c)) continue;
     const res = alchemist(c.bars, c.ei, c.dir, ctxCache[c.symbol], { ...goal, symbol: c.symbol, ...GATE });
     if (!res.ok) continue;
     const out = goal.planStyle === 'confirm'
       ? resolveConfirmation(c.bars, c.ei, c.dir, res.plan, { confirmWindow: goal.confirmWindow, horizon: goal.horizon })
-      : resolvePlan(c.bars, c.ei, c.dir, res.plan, goal.horizon);
+      : goal.planStyle === 'limit'
+        ? resolveLimitEntry(c.bars, c.ei, c.dir, res.plan, { confirmWindow: goal.confirmWindow, retestWindow: goal.retestWindow, horizon: goal.horizon })
+        : resolvePlan(c.bars, c.ei, c.dir, res.plan, goal.horizon);
     if (out.outcome === 'cancelled') { cancelled++; continue; }
+    if (out.outcome === 'unfilled') { unfilled++; continue; }
     trades.push({
       y: c.y, tag: c.tag, symbol: c.symbol,
       r: out.r, outcome: out.outcome,
@@ -118,6 +126,7 @@ function backtest(goal, filter) {
   }
   const overall = summarize(trades);
   overall.cancelled = cancelled;
+  overall.unfilled = unfilled;
   const yearsWithData = Object.values(byYear).filter((v) => v.n >= 8);
   return {
     overall, byYear, byTag, bySymbol,

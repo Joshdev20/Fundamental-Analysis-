@@ -89,7 +89,14 @@ export function newsTypeOf(tag) {
 }
 
 // Stable key used to group releases of the same series across history.
+// Currency -> country, so a key built from a live calendar row (which carries a
+// currency but often no country) still matches the stats built from the
+// historical bundle (which carries the country). Without this the key came out
+// as `undefined:non-farm payrolls` and every live event silently missed.
+const COUNTRY_BY_CURRENCY = { USD: 'US', EUR: 'EU', GBP: 'GB', JPY: 'JP', CAD: 'CA', AUD: 'AU', NZD: 'NZ', CHF: 'CH', CNY: 'CN' };
+
 export function indicatorKey(event) {
   const base = (event.indicator || event.title || '').toLowerCase().trim();
-  return `${event.country}:${base}`.replace(/\s+/g, ' ');
+  const country = event.country || COUNTRY_BY_CURRENCY[event.currency] || '';
+  return `${country}:${base}`.replace(/\s+/g, ' ');
 }
