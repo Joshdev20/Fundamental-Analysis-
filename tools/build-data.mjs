@@ -79,7 +79,7 @@ async function gatherPrices(fromISO) {
   await mkdir(pricesDir, { recursive: true });
   const meta = {};
   for (const pair of PAIRS) {
-    const file = path.join(pricesDir, `${pair.symbol.replace('=', '_')}.json`);
+    const file = path.join(pricesDir, `${pair.symbol}.json`);
     if (existsSync(file)) {
       const cached = JSON.parse(await readFile(file, 'utf8'));
       if (cached.rows?.length) {
@@ -89,8 +89,8 @@ async function gatherPrices(fromISO) {
       }
     }
     try {
-      const { rows, meta: m } = await fetchYahooChart(pair.symbol, { period1: p1, period2: p2, interval: '1d' });
-      await writeFile(file, JSON.stringify({ symbol: pair.symbol, meta: { currency: m.currency }, rows }));
+      const { rows, meta: m } = await fetchYahooChart(pair.dataSymbol, { period1: p1, period2: p2, interval: '1d' });
+      await writeFile(file, JSON.stringify({ symbol: pair.symbol, dataSymbol: pair.dataSymbol, meta: { currency: m.currency }, rows }));
       meta[pair.symbol] = { rows: rows.length, from: rows[0]?.t, to: rows.at(-1)?.t };
       console.log(`  ${pair.label}: ${rows.length} bars`);
     } catch (err) {

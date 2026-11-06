@@ -9,7 +9,8 @@
     "data:hourly": "node tools/build-hourly.mjs",
     "data:model": "node tools/build-model.mjs",
     "data:site": "node tools/build-site-data.mjs",
-    "build": "npm run data:model && npm run data:site",
+    "data:track": "node tools/build-track-record.mjs",
+    "build": "npm run data:model && npm run data:site && npm run data:track",
     "backtest": "node tools/backtest-learned.mjs && node tools/backtest-fade.mjs",
     "dev": "node tools/dev-server.mjs 3000",
     "start": "node tools/dev-server.mjs 3000"

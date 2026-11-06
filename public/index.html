@@ -2,104 +2,200 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FX Fundamental Signals</title>
-  <meta name="description" content="Event-driven forex buy/sell signals from economic releases (NFP, CPI, PPI, FOMC, rate decisions) with walk-forward backtested accuracy." />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Ledger — Event-Driven FX, Gold &amp; Bitcoin Signals</title>
+  <meta name="description" content="High-conviction buy/sell calls on FX, gold and bitcoin after economic releases (NFP, CPI, PPI, FOMC, rate decisions), with a scored track record and walk-forward accuracy." />
+  <meta name="theme-color" content="#0d0f12" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">FX</span>
-      <div>
-        <h1>Fundamental Signals</h1>
-        <p class="sub">Event-driven buy/sell calls from economic releases</p>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="masthead">
+    <div class="wrap masthead-inner">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 17.5 8.5 11l4 3.5L21 6" /><path d="M15.5 6H21v5.5" />
+          </svg>
+        </span>
+        <div class="brand-text">
+          <h1>Ledger</h1>
+          <p>Macro releases → directional calls</p>
+        </div>
       </div>
-    </div>
-    <div class="status">
-      <span id="live-dot" class="dot"></span>
-      <span id="status-text">Loading…</span>
-      <span id="updated" class="muted"></span>
+      <div class="status" role="status">
+        <span id="live-dot" class="dot" aria-hidden="true"></span>
+        <span id="status-text">Loading</span>
+        <span id="updated" class="dim"></span>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section class="kpis" id="kpis"></section>
+  <main id="main">
+    <div class="wrap">
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Live Signals</h2>
-        <div class="controls">
-          <label>Window
-            <select id="window-days">
-              <option value="2">2 days</option>
-              <option value="3" selected>3 days</option>
-              <option value="5">5 days</option>
-              <option value="7">7 days</option>
-            </select>
-          </label>
-          <label>Hold
-            <select id="horizon-days">
-              <option value="1">1 day</option>
-              <option value="3">3 days</option>
-              <option value="5" selected>5 days</option>
-            </select>
-          </label>
-          <label>Min strength
-            <select id="min-score">
-              <option value="1">1 bp</option>
-              <option value="2" selected>2 bp</option>
-              <option value="4">4 bp</option>
-              <option value="8">8 bp</option>
-            </select>
-          </label>
-          <label class="check"><input type="checkbox" id="proven-only" /> Proven edge only</label>
+      <section class="intro">
+        <p class="lede">
+          Only high-conviction calls make it here — big surprises (|z| ≥ 2) and a
+          handful of event types with a measured, repeatable edge. Everything is
+          logged and scored against the price that followed, misses included.
+        </p>
+      </section>
+
+      <section id="kpis" class="kpis" aria-label="Summary"></section>
+
+      <!-- Open calls -->
+      <details class="panel" id="signals-panel" open>
+        <summary>
+          <span class="h">
+            <span class="t">Open calls</span>
+            <span class="sub" id="signals-sub">Fresh high-conviction signals</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <div class="controls">
+            <label>Window
+              <select id="window-days">
+                <option value="7">7d</option>
+                <option value="14">14d</option>
+                <option value="30" selected>30d</option>
+                <option value="60">60d</option>
+              </select>
+            </label>
+            <label>Hold
+              <select id="horizon-days">
+                <option value="1">1d</option>
+                <option value="3">3d</option>
+                <option value="5" selected>5d</option>
+                <option value="10">10d</option>
+              </select>
+            </label>
+            <label>Min surprise
+              <select id="min-z">
+                <option value="1.5">1.5σ</option>
+                <option value="2" selected>2σ</option>
+                <option value="2.5">2.5σ</option>
+              </select>
+            </label>
+            <label>Min move
+              <select id="min-score">
+                <option value="1">1 bp</option>
+                <option value="2" selected>2 bp</option>
+                <option value="5">5 bp</option>
+                <option value="10">10 bp</option>
+              </select>
+            </label>
+            <label class="toggle"><input type="checkbox" id="proven-only" /><span>Proven edge only</span></label>
+          </div>
+          <div id="signals" class="signals"></div>
         </div>
-      </div>
-      <div id="signals" class="signals"></div>
-    </section>
+      </details>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Economic Calendar</h2>
-        <div class="controls">
-          <label class="check"><input type="checkbox" id="only-high" checked /> High impact only</label>
+      <!-- Track record -->
+      <details class="panel" id="track-panel" open>
+        <summary>
+          <span class="h">
+            <span class="t">Track record</span>
+            <span class="sub" id="track-sub">Every logged call, scored</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <div id="track-stats" class="stat-strip"></div>
+          <div class="ledger-tools">
+            <div class="seg" id="track-filter" role="tablist" aria-label="Filter calls">
+              <button type="button" data-f="all" class="on" role="tab" aria-selected="true">All</button>
+              <button type="button" data-f="win" role="tab" aria-selected="false">Wins</button>
+              <button type="button" data-f="loss" role="tab" aria-selected="false">Losses</button>
+              <button type="button" data-f="proven" role="tab" aria-selected="false">Proven</button>
+            </div>
+            <label class="filter">
+              <span class="dim">Instrument</span>
+              <select id="track-instrument"><option value="all">All</option></select>
+            </label>
+          </div>
+          <div id="track" class="ledger"></div>
+          <div class="pager" id="track-pager"></div>
         </div>
-      </div>
-      <div class="table-wrap">
-        <table id="calendar">
-          <thead>
-            <tr><th>Time</th><th>Cur</th><th>Event</th><th>Actual</th><th>Forecast</th><th>Previous</th><th>Surprise</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+      </details>
 
-    <section class="panel">
-      <div class="panel-head"><h2>Backtested Accuracy</h2><span class="muted" id="bt-range"></span></div>
-      <p class="note" id="bt-note"></p>
-      <div id="backtest"></div>
-    </section>
+      <!-- Calendar -->
+      <details class="panel">
+        <summary>
+          <span class="h">
+            <span class="t">Economic calendar</span>
+            <span class="sub">Releases feeding the model</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <div class="controls end">
+            <label class="toggle"><input type="checkbox" id="only-high" checked /><span>High impact only</span></label>
+          </div>
+          <div class="scroller">
+            <table id="calendar">
+              <thead>
+                <tr><th>Time</th><th>Cur</th><th>Event</th><th class="num">Actual</th><th class="num">Forecast</th><th class="num">Previous</th><th class="num">Surprise</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
 
-    <section class="panel methodology">
-      <h2>How it works</h2>
-      <ol>
-        <li><b>Surprise.</b> For each release we compute <code>actual − forecast</code> and normalise it by that indicator's own historical surprise volatility, giving a z-score.</li>
-        <li><b>Learned response.</b> We measure, per event type and currency, how the currency historically moved (in basis points) per unit of surprise. The fitted slope is the directional edge — it is learned from data, not assumed.</li>
-        <li><b>Pair mapping.</b> A bullish shock to a currency pushes pairs where it is the base up, and pairs where it is the quote down.</li>
-        <li><b>Honest evaluation.</b> Everything is walk-forward: a signal for year Y only uses data from years before Y. Confidence is anchored to the measured win rate of the matching bucket.</li>
-      </ol>
-      <p class="note">Honest limitations: intraday post-release trading of liquid majors is close to efficient. The durable, measurable edge sits in (a) large surprises (|z| ≥ 2.5) where price over-reacts and partially reverses over the following days, and (b) specific event types such as rate decisions and growth releases. This tool surfaces those, with the historical sample size shown for every claim.</p>
-    </section>
+      <!-- Backtest -->
+      <details class="panel">
+        <summary>
+          <span class="h">
+            <span class="t">Backtested accuracy</span>
+            <span class="sub" id="bt-range"></span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <p class="note" id="bt-note"></p>
+          <div class="scroller" id="backtest"></div>
+        </div>
+      </details>
+
+      <!-- Method -->
+      <details class="panel prose">
+        <summary>
+          <span class="h"><span class="t">Method</span><span class="sub">How the calls are made</span></span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <ol>
+            <li><b>Surprise.</b> For each release, <code>actual − forecast</code>, normalised by that indicator's own historical surprise volatility to a z-score.</li>
+            <li><b>Learned response.</b> Per event type and currency we regress the post-release return (in basis points) on the surprise. The fitted slope is the edge — measured, not assumed.</li>
+            <li><b>Gate.</b> A release only becomes a candidate at |z| ≥ 2, where the backtest shows the edge begins. Below that it is noise.</li>
+            <li><b>Follow or fade.</b> Ordinary surprises are traded with the measured response; very large ones (|z| ≥ 2.5) tend to over-react, so they are faded instead. The backtest decides which is used.</li>
+            <li><b>Instruments.</b> 28 FX crosses plus gold (XAU/USD) and bitcoin (BTC/USD), driven by the USD response and scored on their own price series.</li>
+            <li><b>Honest scoring.</b> Walk-forward throughout: a call for year Y only uses earlier data. Confidence is shrunk toward a coin flip when the sample is thin, and the sample size is always shown.</li>
+          </ol>
+          <p class="note">
+            What this is not: a 70%-accurate crystal ball. Intraday post-release trading of liquid
+            majors is close to efficient, and no honest model gets 70% of daily FX calls right. The
+            durable edge is modest — about 54% overall, rising to ~62% on calls whose bucket has a
+            proven, large sample — and it concentrates in large surprises and a few event types (rate
+            decisions, housing, inflation). Small surprises are a coin flip, and the app says so
+            rather than dressing them up.
+          </p>
+        </div>
+      </details>
+    </div>
   </main>
 
   <footer>
-    <p><b>Not financial advice.</b> Signals are statistical estimates from historical data and can be wrong. Backtests are not a guarantee of future results. Trade at your own risk.</p>
-    <p class="muted">Data: TradingView economic calendar, Yahoo Finance FX prices. Signals recompute in your browser from the live calendar.</p>
+    <div class="wrap">
+      <p><b>Not financial advice.</b> Statistical estimates from historical data; they can be wrong. A backtest is not a promise.</p>
+      <p class="dim">Sources: TradingView economic calendar; Yahoo Finance prices. Signals recompute in your browser from the live calendar.</p>
+    </div>
   </footer>
 
   <script type="module" src="./app.js"></script>

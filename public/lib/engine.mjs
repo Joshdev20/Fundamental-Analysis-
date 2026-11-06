@@ -5,7 +5,7 @@
 // confidence for each.
 
 import { classify, indicatorKey } from './polarity.mjs';
-import { PAIRS, pairDirection } from './pairs.mjs';
+import { PAIRS, pairDirection, bucketOf } from './pairs.mjs';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -24,11 +24,11 @@ export function zOf(e, model) {
   return clamp(surprise / s.sigma, -3, 3);
 }
 
-function betaFor(model, tag, ccy, h) {
+function betaFor(model, tag, bucket, h) {
   const chain = [
-    model.betas[`${tag}|${ccy}|${h}`],
+    model.betas[`${tag}|${bucket}|${h}`],
     model.pooledBetas[`tag|${tag}|${h}`],
-    model.pooledBetas[`ccy|${ccy}|${h}`],
+    model.pooledBetas[`ccy|${bucket}|${h}`],
     model.pooledBetas[`all|${h}`],
   ];
   return chain.find(Boolean) || null;
@@ -46,11 +46,16 @@ function zBucket(z) {
 }
 
 // Historical, walk-forward measured performance for a signal's bucket.
-export function hitRateFor(model, strategy, horizonDays, { tag, ccy, z }) {
+// Ordered most-specific first: the (tag, bucket) cell, then the per-instrument
+// record, then progressively broader pools. `bucket` is the pair's bucket — its
+// currency for FX, 'XAU'/'BTC' for gold and bitcoin, which therefore get their
+// own learned and measured record instead of the FX pooled one.
+export function hitRateFor(model, strategy, horizonDays, { tag, ccy, z, instrument }) {
   const block = model.hitRates[`${strategy}|${horizonDays}`];
   if (!block) return null;
   const candidates = [
     block.byBucket[`${tag}|${ccy}`],
+    instrument && block.byInstrument?.[instrument],
     block.byTagZ[`${tag}|${zBucket(z)}`],
     block.byTag[tag],
     block.byZ[zBucket(z)],
@@ -61,27 +66,32 @@ export function hitRateFor(model, strategy, horizonDays, { tag, ccy, z }) {
 }
 
 /**
- * Evaluate a single release for its reporting currency.
+ * Evaluate a single release for a given bucket (currency, or 'XAU'/'BTC').
  * Returns null when the event is not a usable, high-impact surprise.
  */
-export function evaluateEvent(event, model, { horizonDays = 5 } = {}) {
+export function evaluateEvent(event, model, { horizonDays = 5, bucket, instrument } = {}) {
   if (!event || event.importance !== 1) return null;
   const { tag } = classify(event.title, event.indicator);
   const z = zOf(event, model);
   if (z == null || z === 0) return null;
-  const ccy = event.currency;
+  const ccy = bucket || event.currency;
   const b = betaFor(model, tag, ccy, horizonDays);
   if (!b || !Number.isFinite(b.beta)) return null;
   const contributionBps = b.beta * z; // signed currency strength
   if (Math.abs(contributionBps) < 1) return null;
 
-  const strategy = Math.abs(z) >= 2 && hitRateFor(model, 'fade', horizonDays, { tag, ccy, z })?.winRate
-    > (hitRateFor(model, 'model', horizonDays, { tag, ccy, z })?.winRate ?? 0) ? 'fade' : 'model';
-  const hit = hitRateFor(model, strategy, horizonDays, { tag, ccy, z }) || hitRateFor(model, 'model', horizonDays, { tag, ccy, z });
+  const args = { tag, ccy, z, instrument };
+  const fadeHit = hitRateFor(model, 'fade', horizonDays, args);
+  const modelHit = hitRateFor(model, 'model', horizonDays, args);
+  // Fade only pays on genuinely large surprises (|z| >= 2.5); below that the
+  // follow model is the better bet. This threshold is what the backtest shows.
+  const strategy = Math.abs(z) >= 2.5 && (fadeHit?.winRate ?? 0) > (modelHit?.winRate ?? 0) ? 'fade' : 'model';
+  const hit = strategy === 'fade' ? fadeHit : modelHit;
 
   return {
     tag,
-    currency: ccy,
+    currency: event.currency,
+    bucket: ccy,
     country: event.country,
     title: event.title,
     z,
@@ -97,9 +107,9 @@ export function evaluateEvent(event, model, { horizonDays = 5 } = {}) {
   };
 }
 
-// Map an event's currency shock onto a pair's direction.
+// Map an event's shock onto a pair's direction.
 export function eventPairDirection(event, pair, model, opts) {
-  const ev = evaluateEvent(event, model, opts);
+  const ev = evaluateEvent(event, model, { ...opts, bucket: bucketOf(pair, event.currency), instrument: pair.symbol });
   if (!ev) return null;
   const dir = pairDirection(pair, ev.currency, ev.currencyBullish);
   if (dir === 0) return null;
@@ -111,22 +121,34 @@ export function eventPairDirection(event, pair, model, opts) {
  * events: array of normalized events (with actual values). Only events within
  * `windowDays` of `asOf` contribute.
  */
-export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3, horizonDays = 5, minScoreBps = 2, requireEdge = false } = {}) {
+export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3, horizonDays = 5, minScoreBps = 2, minZ = 2, requireEdge = false } = {}) {
   const windowMs = windowDays * 86400000;
-  const evaluated = [];
+  const candidates = [];
   for (const e of events) {
     if (!Number.isFinite(e.ts) || e.ts > asOf || asOf - e.ts > windowMs) continue;
-    const ev = evaluateEvent(e, model, { horizonDays });
-    if (ev) evaluated.push({ event: e, ...ev });
+    if (e.importance !== 1) continue;
+    // Below |z| ~ 2 the surprise is inside normal noise and the edge vanishes,
+    // so those releases are not allowed to drive a signal.
+    const z = zOf(e, model);
+    if (z == null || Math.abs(z) < minZ) continue;
+    candidates.push(e);
   }
 
   const signals = [];
   for (const pair of PAIRS) {
     const drivers = [];
     let score = 0;
-    for (const ev of evaluated) {
-      if (ev.currency !== pair.base && ev.currency !== pair.quote) continue;
-      const dir = pairDirection(pair, ev.currency, ev.currencyBullish);
+    for (const event of candidates) {
+      if (event.currency !== pair.base && event.currency !== pair.quote) continue;
+      // Each pair is scored with its own bucket, so gold and bitcoin use their
+      // own learned beta and measured hit rate rather than the FX pooled one.
+      const ev = evaluateEvent(event, model, {
+        horizonDays,
+        bucket: bucketOf(pair, event.currency),
+        instrument: pair.symbol,
+      });
+      if (!ev) continue;
+      const dir = pairDirection(pair, event.currency, ev.currencyBullish);
       if (dir === 0) continue;
       const contribution = dir * Math.abs(ev.contributionBps);
       score += contribution;
@@ -143,19 +165,18 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
     const hasEdge = top.hitRate != null && top.hitSample >= 30 && top.hitRate > 50;
     if (requireEdge && !hasEdge) continue;
 
-    const agreement = drivers.reduce((a, d) => a + (Math.sign(d.contribution) === Math.sign(score) ? Math.abs(d.contribution) : 0), 0) / absScore;
-    const confidence = confidenceOf({ absScore, agreement, top, drivers });
+    const confidence = confidenceOf(top.hitRate, top.hitSample);
 
     signals.push({
       symbol: pair.symbol,
       label: pair.label,
+      kind: pair.kind,
       base: pair.base,
       quote: pair.quote,
       action: score > 0 ? 'BUY' : 'SELL',
       direction: Math.sign(score),
       scoreBps: +score.toFixed(2),
       confidence,
-      agreement: +agreement.toFixed(2),
       expectedMoveBps: +(absScore).toFixed(2),
       hasEdge,
       top,
@@ -166,18 +187,12 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
   return signals;
 }
 
-function confidenceOf({ absScore, agreement, top, drivers }) {
-  const strength = 1 - Math.exp(-absScore / 12);
-  let conf = 48 + 22 * strength + 12 * agreement;
-  if (drivers.length > 1) conf += Math.min(3, drivers.length);
-  if (top && Math.abs(top.z) >= 2.5) conf += 4;
-  else if (top && Math.abs(top.z) >= 1.5) conf += 2;
-  if (top?.hitRate != null && top.hitSample >= 30) {
-    // The signal's confidence is dominated by the measured walk-forward win
-    // rate of its bucket, so the number we show matches the backtest.
-    conf = 0.75 * top.hitRate + 0.25 * conf;
-  }
-  return Math.max(40, Math.min(80, Math.round(conf)));
+// Sample-shrunk confidence: a coin flip (50) when the bucket sample is thin,
+// drifting toward the measured win rate only as n grows.
+function confidenceOf(winRate, n) {
+  if (winRate == null || n < 30) return 50;
+  const pull = Math.min(1, (n - 30) / 170);
+  return Math.max(40, Math.min(80, Math.round(50 + (winRate - 50) * pull)));
 }
 
 export { PAIRS };

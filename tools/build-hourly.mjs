@@ -15,8 +15,8 @@ async function main() {
   await mkdir(OUT, { recursive: true });
   for (const pair of PAIRS) {
     try {
-      const { rows } = await fetchYahooChart(pair.symbol, { range: '730d', interval: '1h' });
-      await writeFile(path.join(OUT, `${pair.symbol.replace('=', '_')}.json`), JSON.stringify({ symbol: pair.symbol, rows }));
+      const { rows } = await fetchYahooChart(pair.dataSymbol, { range: '730d', interval: '1h' });
+      await writeFile(path.join(OUT, `${pair.symbol}.json`), JSON.stringify({ symbol: pair.symbol, dataSymbol: pair.dataSymbol, rows }));
       console.log(`${pair.label}: ${rows.length} hourly bars`);
     } catch (err) {
       console.warn(`${pair.label}: FAILED ${err.message}`);

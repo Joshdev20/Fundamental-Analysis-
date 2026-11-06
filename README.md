@@ -1,12 +1,14 @@
 # FX Fundamental Signals
 
-Event-driven **buy/sell signals for major forex pairs** built from economic
-releases — NFP, CPI, PPI, PCE, rate decisions (FOMC / ECB / BoE / RBA …), GDP,
-retail sales and more.
+Event-driven **buy/sell signals for major forex pairs, gold and bitcoin** built
+from economic releases — NFP, CPI, PPI, PCE, rate decisions (FOMC / ECB / BoE /
+RBA …), GDP, retail sales and more.
 
 Signals are generated in your browser from the live economic calendar, and every
 claim of accuracy is backed by a **walk-forward backtest** over 12 years of data
-that ships with the app.
+that ships with the app. Every call the app makes is also **logged and scored
+against the price that followed**, so the win rate can be checked rather than
+taken on trust.
 
 Static site (HTML/CSS/JS, no framework) with a single serverless proxy for
 CORS-restricted data — deployable to Vercel with zero configuration.
@@ -23,10 +25,21 @@ CORS-restricted data — deployable to Vercel with zero configuration.
    points the currency historically moved per unit of surprise. The slope is fit
    from data, not assumed — so `CPI`, `NFP`, `rate decision`, `GDP` etc. each get
    their own empirically measured direction and magnitude.
-4. **Maps the currency shock onto 28 pairs.** A bullish shock lifts pairs where
-   the currency is the base and pushes down pairs where it is the quote.
-5. **Reports an honest confidence**, anchored to the measured walk-forward win
-   rate of the matching bucket, and flags whether the signal has a *proven edge*.
+4. **Maps the currency shock onto 30 instruments** — 28 FX crosses plus gold
+   (XAU/USD) and bitcoin (BTC/USD). A bullish shock lifts pairs where the
+   currency is the base and pushes down pairs where it is the quote. Gold and
+   bitcoin are quoted in USD, so they are driven by the USD response but scored
+   on their own price series rather than blended into the FX pool.
+5. **Gates on conviction.** A release only becomes a candidate at |z| ≥ 2, where
+   the edge begins, and it is followed or faded depending on how large the
+   surprise is — the backtest decides which. Small surprises never fire.
+6. **Reports an honest confidence**, shrunk toward a coin flip when the sample is
+   thin, anchored to the measured walk-forward win rate of the matching bucket,
+   and flags whether the signal has a *proven edge*.
+7. **Keeps a ledger.** Every call is logged the day it is made and resolved
+   against the realised price five days later. The track record panel pages
+   through the full record — wins, losses and the profit factor net of costs —
+   and can be filtered by outcome and instrument.
 
 ## Accuracy — what the backtest actually shows
 
@@ -43,36 +56,29 @@ moved to after the release, the honest picture is:
 
 | Surprise (|z|) | Win rate | Avg move | Sample |
 |---|---|---|---|---|
-| < 0.5 | 49.3 % | −4.0 bp | 16 233 |
-| 0.5 – 1 | 51.1 % | +0.6 bp | 8 085 |
-| 1 – 1.5 | 49.3 % | +3.2 bp | 4 585 |
-| 1.5 – 2 | 47.5 % | −6.2 bp | 2 352 |
-| 2 – 2.5 | 52.3 % | +4.1 bp | 1 050 |
-| 2.5 – 3 | **55.5 %** | +9.2 bp | 560 |
-| ≥ 3 | 49.4 % | +7.5 bp | 826 |
+| < 0.5 | 48.8 % | −6.9 bp | 18 655 |
+| 0.5 – 1 | 50.8 % | +0.1 bp | 9 277 |
+| 1 – 1.5 | 48.9 % | −2.5 bp | 5 357 |
+| 1.5 – 2 | 47.9 % | −0.5 bp | 2 718 |
+| 2 – 2.5 | 52.8 % | +10.9 bp | 1 218 |
+| 2.5 – 3 | **54.6 %** | **+18.6 bp** | 634 |
+| ≥ 3 | 49.4 % | +14.1 bp | 944 |
 
-**Fade the release-day move** (overreaction reversal) does better exactly where
-it matters — after the biggest surprises:
+The edge only exists on **large surprises**. That is why the live engine refuses
+to fire below **|z| ≥ 2** — a call from a 0.7σ surprise is a coin flip, and the
+app does not pretend otherwise.
 
-| Surprise (|z|) | Win rate | Avg move | Sample |
-|---|---|---|---|
-| ≥ 3 | **55.8 %** | **+18.3 bp** | 826 |
-| 2.5 – 3 | 51.6 % | +7.4 bp | 560 |
+**The live track record.** Replaying the exact signals the shipped engine
+produces, day by day, over the last ~13 months (`npm run data:track`) gives
+**143 high-conviction calls, 53.8 % win rate, profit factor 1.85, +26.7 bp
+average per call** net of 2 bp cost — buys at 54.9 %, sells at 52.8 %. Restricting
+to calls whose bucket has a proven edge lifts it to **61.5 % (n = 65)**. The app
+ships this ledger and lets you page through it, filter to wins, losses or
+proven-edge calls, and drill into any instrument — including gold and bitcoin.
 
-**Event-type edges at |z| ≥ 3** (follow / fade, 5-day hold):
-
-| Event type | Follow model | Fade the move |
-|---|---|---|
-| Rate decisions | 62.4 % (PF 2.6) | — |
-| Growth / GDP | — | 67.6 % (PF 2.1) |
-| Unemployment | — | 67.3 % (PF 4.4) |
-| Labour | — | 62.5 % (PF 3.6) |
-| Consumption | 59.0 % (PF 2.9) | — |
-
-**Read this honestly:** the durable, measurable edge lives in **large surprises
-(|z| ≥ 2.5)** and in **specific event types** — not in the median release. The
-app shows the sample size (`n`) behind every number and marks calls without a
-proven edge. Small surprises are a coin flip; treat them as noise.
+**Honest headline.** A gated model gets roughly 54 % overall, ~62 % on the
+proven-edge subset, and the misses are listed alongside the wins. Anyone quoting
+70 % on daily FX direction is fitting noise.
 
 > Backtests are not a guarantee of future results. This is not financial advice.
 
@@ -85,21 +91,28 @@ public/                  static site (the whole frontend)
     pairs.mjs            pair universe + direction mapping
     polarity.mjs         event taxonomy / classification
     engine.mjs           live inference (z-score → signal)
-  data/                  model.json, events-recent.json, backtest.json
+  data/                  model.json, events-recent.json, backtest.json, track-record.json
 api/proxy.js             serverless allowlisted proxy (CORS)
 lib/                     Node-only tooling modules
   data.mjs               TradingView / Yahoo / FRED fetchers
   response.mjs           learned response model (walk-forward)
+  model-core.mjs         shared beta fitting + hit-rate accounting
   bars.mjs               bar lookup helpers
 tools/                   data pipeline + backtests
   build-data.mjs         fetch 2014→now calendar + daily prices
   build-hourly.mjs       fetch 730d hourly prices
   build-model.mjs        fit betas + walk-forward hit rates → model.json
   build-site-data.mjs    trim artifacts for the browser
+  build-track-record.mjs replay the live engine day by day → track-record.json
   backtest-learned.mjs   walk-forward model evaluation
   backtest-fade.mjs      overreaction-fade characterisation
 vercel.json              static hosting + cache headers
 ```
+
+**Instrument universe.** 28 FX crosses across USD, EUR, GBP, JPY, AUD, CAD, CHF
+and NZD, plus **XAU/USD** (Yahoo `GC=F`) and **BTC/USD** (Yahoo `BTC-USD`). Gold
+and bitcoin are scored on their own price series with their own learned betas, so
+they are never blended into the FX statistics.
 
 **Data sources** (all free, no API keys):
 
@@ -115,8 +128,8 @@ vercel.json              static hosting + cache headers
 # 1. Rebuild the datasets (only needed to refresh history; ~5 min)
 npm run data:events     # calendar 2014→now + daily prices
 npm run data:hourly     # 730 days of hourly prices
-npm run data:model      # fit the model + walk-forward hit rates
-npm run data:site       # write public/data/*
+npm run build           # refit model, trim artifacts, rebuild the track record
+# (equivalent to data:model + data:site + data:track)
 
 # 2. Serve the static site
 npm run dev             # http://localhost:3000

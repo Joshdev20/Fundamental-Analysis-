@@ -4,16 +4,19 @@ Repository memory for the FX Fundamental Signals project.
 
 ## What this is
 
-Static-site (Vercel, no backend) forex signal generator. Reads economic releases
+Static-site (Vercel, no backend) signal generator. Reads economic releases
 (NFP, CPI, PPI, rate decisions …), computes the surprise vs consensus, maps it to
-a directional call on 28 pairs, and shows a walk-forward-backtested confidence.
+a directional call on 30 instruments (28 FX crosses + XAU/USD + BTC/USD), and
+shows a walk-forward-backtested confidence plus a scored ledger of every call.
 
 ## Layout
 
 - `public/` — the entire deployed site. Vanilla ES modules, no build step.
   - `public/lib/*.mjs` are shared between the browser and Node tooling. Keep them
     dependency-free and browser-safe (no `node:` imports).
-- `lib/` — Node-only tooling modules (`data.mjs`, `response.mjs`, `bars.mjs`).
+- `lib/` — Node-only tooling modules (`data.mjs`, `response.mjs`, `bars.mjs`,
+  `model-core.mjs`). `model-core.mjs` holds the beta-fitting and hit-rate math
+  shared by `build-model.mjs` and `build-track-record.mjs`.
 - `tools/` — data pipeline and backtests. Run with plain `node tools/x.mjs`.
 - `api/proxy.js` — the only serverless function; allowlisted host proxy.
 - `data/` — raw datasets (git-ignored, ~40 MB). Regenerate with npm scripts.
@@ -21,10 +24,12 @@ a directional call on 28 pairs, and shows a walk-forward-backtested confidence.
 
 ## Commands
 
-- `npm run data:events` — calendar 2014→now + daily FX prices (Yahoo).
-- `npm run data:hourly` — 730d hourly FX prices.
+- `npm run data:events` — calendar 2014→now + daily prices (Yahoo).
+- `npm run data:hourly` — 730d hourly prices.
 - `npm run data:model` — fit response betas + walk-forward hit rates → `data/model.json`.
 - `npm run data:site` — write `public/data/*`.
+- `npm run data:track` — replay the live engine day by day → `public/data/track-record.json`.
+- `npm run build` — `data:model` + `data:site` + `data:track`.
 - `npm run backtest` — walk-forward evaluation + fade characterisation.
 - `npm run dev` — serve `public/` on :3000.
 
@@ -40,6 +45,18 @@ a directional call on 28 pairs, and shows a walk-forward-backtested confidence.
 - Confidence numbers must be anchored to measured walk-forward win rates, never
   invented. Honesty over impressive-looking numbers is a core product value.
 
+## Instrument universe
+
+- `public/lib/pairs.mjs` is the single source of truth: `symbol` is our internal
+  id (and the price filename, e.g. `XAUUSD.json`); `dataSymbol` is the Yahoo
+  ticker (`GC=F`, `BTC-USD`).
+- Gold and bitcoin are USD-quoted, so their `base` is `USD` and they are driven
+  by the USD beta — but they carry a `bucket` (`XAU`/`BTC`) so their learned
+  betas and measured hit rates are computed on their own series and never
+  blended into the FX pool. `bucketOf(pair, ccy)` returns that key.
+- Yahoo has no usable `XAUUSD=X`/`BTCUSD=X`; use `GC=F` (gold futures, from 2014)
+  and `BTC-USD`.
+
 ## Data source quirks
 
 - TradingView calendar (`economic-calendar.tradingview.com/events`) is the best
@@ -49,6 +66,34 @@ a directional call on 28 pairs, and shows a walk-forward-backtested confidence.
   requests go through `/api/proxy`.
 - Yahoo `query1.finance.yahoo.com` needs a browser User-Agent and has no CORS.
 - FRED CSV works but the ALFRED vintage endpoint does not; don't rely on vintages.
+
+## Track record
+
+- `tools/build-track-record.mjs` replays `buildSignals` one day at a time over
+  the last 400 days, logs each call on the day it would first appear, and scores
+  it against the realised 5-day move. The ledger is a real out-of-sample record
+  of the shipped engine, not a re-fitted backtest.
+- The same pair can stay in the 3-day window for several days; the builder keeps
+  only the first day of each run (same pair, same action, gap < window) so each
+  move is logged once.
+
+## Accuracy ceiling (do not fight this)
+
+- ~70 % win rate on daily FX direction is **not achievable** and every attempt to
+  reach it in this repo produced noise-fitting. Measured facts, all walk-forward:
+  - |z| < 2: a coin flip (47–51 %). The engine therefore refuses to fire there
+    (`minZ` in `buildSignals`, default 2).
+  - |z| 2–3 at a 5-day hold: ~53–55 %. This is the real, repeatable edge.
+  - Per-event-type: rate decisions ~62 % (follow), consumption ~59 % (follow),
+    housing ~78 %, unemployment/trade/growth pay when **faded**. Most other tags
+    are not tradeable.
+  - Regime-dependent: 2015–2018 were roughly flat-to-negative; 2020–2026 positive.
+    Report per-year numbers, never a single pooled figure, or it looks better than
+    it is.
+- Tried and rejected (kept here so nobody redoes it): horizon × strategy cell
+  selection per (tag, bucket) — overfits, held-out win rate collapsed to 40–48 %;
+  hourly post-release entry — the apparent 70 %+ at 1–3 h is a bid–ask bounce that
+  decays by 6 h and is not tradeable; hourly reaction continuation — ~46 %.
 
 ## Known finding (important)
 
