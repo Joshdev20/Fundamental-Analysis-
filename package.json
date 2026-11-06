@@ -18,7 +18,8 @@
     "data:chart": "node tools/build-chart-data.mjs",
     "data:tnc": "node tools/backtest-tnc.mjs",
     "data:apa": "node tools/backtest-apa.mjs",
-    "data:fund": "node tools/backtest-fund.mjs"
+    "data:fund": "node tools/backtest-fund.mjs",
+    "check": "node tools/check-conventions.mjs"
   },
   "engines": {
     "node": ">=18"

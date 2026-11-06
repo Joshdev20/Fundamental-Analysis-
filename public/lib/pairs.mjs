@@ -39,9 +39,14 @@ export const PAIRS = [
   { symbol: 'NZDCAD', dataSymbol: 'NZDCAD=X', base: 'NZD', quote: 'CAD', label: 'NZD/CAD', kind: 'fx' },
   { symbol: 'NZDCHF', dataSymbol: 'NZDCHF=X', base: 'NZD', quote: 'CHF', label: 'NZD/CHF', kind: 'fx' },
   { symbol: 'CADCHF', dataSymbol: 'CADCHF=X', base: 'CAD', quote: 'CHF', label: 'CAD/CHF', kind: 'fx' },
-  // USD-denominated instruments: driven by the USD beta, measured on their own.
-  { symbol: 'XAUUSD', dataSymbol: 'GC=F', base: 'USD', quote: 'XAU', label: 'XAU/USD', kind: 'metal', bucket: 'XAU' },
-  { symbol: 'BTCUSD', dataSymbol: 'BTC-USD', base: 'USD', quote: 'BTC', label: 'BTC/USD', kind: 'crypto', bucket: 'BTC' },
+  // USD-denominated instruments: quoted in USD, so the asset is the base and
+  // the dollar the quote, exactly like EUR/USD. A bullish USD surprise therefore
+  // sells them, the same rule every other XXX/USD pair follows. Marking them
+  // `base: 'USD'` inverted that and made USD strength buy gold. Their hit rates
+  // are still bucketed separately via `bucket` so they are not blended in with
+  // the FX crosses.
+  { symbol: 'XAUUSD', dataSymbol: 'GC=F', base: 'XAU', quote: 'USD', label: 'XAU/USD', kind: 'metal', bucket: 'XAU' },
+  { symbol: 'BTCUSD', dataSymbol: 'BTC-USD', base: 'BTC', quote: 'USD', label: 'BTC/USD', kind: 'crypto', bucket: 'BTC' },
 ];
 
 export const pairBySymbol = Object.fromEntries(PAIRS.map((p) => [p.symbol, p]));
