@@ -16,11 +16,14 @@ export function surpriseOf(e) {
   return null;
 }
 
+// Minimum releases before an indicator gets a live z-score.
+const MIN_STATS_N = 8;
 export function zOf(e, model) {
   const surprise = surpriseOf(e);
   if (surprise == null) return null;
   const s = model.stats[indicatorKey(e)];
-  if (!s || !s.sigma || s.n < 8) return null;
+  // Enough history for the robust scale to mean something.
+  if (!s || !s.sigma || s.n < MIN_STATS_N) return null;
   return clamp(surprise / s.sigma, -3, 3);
 }
 

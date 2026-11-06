@@ -691,6 +691,12 @@ async function boot() {
     $('#live-dot').classList.add('on');
     $('#status-text').textContent = 'Live';
     $('#updated').textContent = new Date(state.asOf).toISOString().slice(0, 16).replace('T', ' ');
+    const barSeries = state.bars && Object.values(state.bars).find((b) => b && b.length);
+    const lastBar = barSeries ? barSeries[barSeries.length - 1].t : null;
+    const ageH = lastBar ? (state.asOf - lastBar) / 3600000 : null;
+    $('#freshness').textContent = lastBar
+      ? `Prices as of ${new Date(lastBar).toISOString().slice(0, 10)}${ageH > 24 ? ` (${Math.floor(ageH / 24)}d old)` : ''} · calendar live`
+      : 'calendar live';
   } catch (err) {
     $('#live-dot').classList.add('err');
     $('#status-text').textContent = 'Offline — bundled data';

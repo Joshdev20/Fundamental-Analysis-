@@ -234,7 +234,7 @@ produced.
 
 | Model | What it needs | Calls | Win rate | PF | Expectancy |
 |---|---|---|---|---|---|
-| Fundamentals + chart, category filter | big surprise **and** the chart agrees **and** the news type has a proven prior record | 176 | **64.6%** | 1.83 | +0.291R |
+| Fundamentals + chart, category filter | big surprise **and** the chart agrees **and** the news type has a proven prior record | 273 | **58.7%** | 1.43 | +0.175R |
 | Fundamentals + chart, no filter | big surprise and the chart agrees | 408 | 56.0% | 1.28 | +0.121R |
 | APA `trend+fvg`, 1:0.5 target | structure + imbalance, tiny target | 10,150 | 64.5% | 0.87 | −0.046R |
 | TNC key levels, short side | A-shaped level or bearish OCL, 1:1 | 35,199 | 52.1% | 1.08 | +0.04R |
@@ -244,8 +244,17 @@ produced.
 that combination does not exist here. A high hit rate needs a target close to the
 stop: the APA row hits 64.5% on a 1:0.5 target but its expectancy is negative, so
 it loses money. The best balance of win rate and profitability is the fundamental
-model with a news-type filter, at 64.6% with a positive expectancy. The
+model with a news-type filter, at 58.7% with a positive expectancy. The
 fundamental model is what the platform leads with.
+
+The surprise scale behind every z-score is the interquartile range of past
+surprises, not the standard deviation. This matters: a single corrupt non-farm
+payrolls row (an actual of -20,469,000 against a forecast of 80,000) had inflated
+that indicator's standard deviation to 1.58M against a real spread near 104k, so
+every genuine NFP beat scored z ≈ 0 and the largest release on the platform could
+never produce a call. The IQR ignores tails, so no one bad row can silence an
+indicator. After the fix an NFP beat of +55k scores z 0.54, and a 2σ call needs a
+surprise of roughly ±205k — which about 10% of NFP releases clear.
 
 ### Which news type each call came from
 
