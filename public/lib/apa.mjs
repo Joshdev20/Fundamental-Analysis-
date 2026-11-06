@@ -193,10 +193,11 @@ export function apaSignals(ctx, at, opts = {}) {
     const fvg = comp.dirs[dir].fvg;
     if (o.requireFvg && !fvg) continue;
     // 4. Confirmation: a break of structure in the trade direction.
-    if (!comp.dirs[dir].bos) continue;
+    const bos = comp.dirs[dir].bos;
+    if (!bos) continue;
 
     // 5. Plan
-    const price = bar.c;
+    const price = h1[at].c;
     const risk = o.stopAtr * a;
     const stop = dir > 0 ? price - risk : price + risk;
     let take = dir > 0 ? price + o.rr * risk : price - o.rr * risk;
@@ -211,7 +212,7 @@ export function apaSignals(ctx, at, opts = {}) {
       model: 'APA', dir, action: dir > 0 ? 'BUY' : 'SELL',
       structure: comp.structure,
       sweep: sweep ? sweep.kind : null, fvg: fvg ? fvg.type : null, bos: !!bos,
-      entryAt: bar.t, entryBar: at,
+      entryAt: h1[at].t, entryBar: at,
       plan: {
         entry: +price.toFixed(5), stop: +stop.toFixed(5), take: +take.toFixed(5),
         risk: +risk.toFixed(5), reward: +(Math.abs(take - price)).toFixed(5),

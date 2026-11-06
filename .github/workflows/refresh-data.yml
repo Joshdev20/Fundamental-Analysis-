@@ -2,8 +2,9 @@ name: Refresh data
 
 on:
   schedule:
-    # Mondays 04:00 UTC
-    - cron: '0 4 * * 1'
+    # Daily 04:00 UTC, after the Friday close and the weekend gap. Daily bars
+    # need a daily refresh: weekly left the chart up to seven days stale.
+    - cron: '0 4 * * *'
   workflow_dispatch:
 
 permissions:

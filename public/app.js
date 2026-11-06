@@ -4,6 +4,8 @@ import { drawChart } from './lib/chart.mjs';
 import { classify as classifyTitle, newsTypeOf as newsTypeLabel } from './lib/polarity.mjs';
 import { prepare as tncPrepare, TNC_LADDER } from './lib/tnc.mjs';
 import { prepareApa, apaSignals, apaComponents } from './lib/apa.mjs';
+import { PAIRS } from './lib/pairs.mjs';
+import { fetchQuotes, withLiveClose } from './lib/live.mjs';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -16,6 +18,10 @@ const state = {
   model: null,
   events: [],
   bars: {},
+  quotes: {},
+  quotesAt: null,
+  liveTimer: null,
+  liveOn: true,
   msnr: { plan: msnrPlan },
   msnrOn: true,
   msnrRequire: false,
@@ -148,6 +154,21 @@ function renderUpcoming() {
   }).join('');
 }
 
+// Move a plan's entry to the live price, keeping the risk distance the model
+// chose. The signal logic stays on daily bars — only the entry anchor moves, so
+// the displayed plan is at the price you could actually fill it.
+function withLivePlan(x) {
+  const p = x.plan;
+  const q = state.quotes[x.symbol];
+  if (!p || !q || !q.price || !(p.entry > 0) || !(p.risk > 0)) return p;
+  const dir = x.action === 'BUY' ? 1 : -1;
+  const entry = q.price;
+  const stop = dir > 0 ? entry - p.risk : entry + p.risk;
+  const take = dir > 0 ? entry + p.reward : entry - p.reward;
+  const dp = (v) => (v >= 100 ? +v.toFixed(2) : v >= 1 ? +v.toFixed(4) : +v.toFixed(5));
+  return { ...p, entry: dp(entry), stop: dp(stop), take: dp(take), live: true };
+}
+
 // One sentence per card saying what the call is and whether to act on it.
 function verdictOf(x) {
   const what = x.fundOk
@@ -232,12 +253,12 @@ function renderSignals() {
 
     let planBlock = '';
     if (x.plan) {
-      const p = x.plan;
+      const p = withLivePlan(x);
       const dp = (v) => (v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(4) : v.toFixed(5));
       const order = p.order ? `<span class="order">${esc(p.order)}</span>` : '';
       const pipLine = p.pips ? `<div class="sig-row"><span class="lbl">Distances</span><span class="sig-meta">stop ${p.pips.sl} pips · target ${p.pips.tp} pips</span></div>` : '';
       planBlock = `<div class="plan">
-        <div class="plan-cell"><span class="lbl">Entry</span><b>${dp(p.entry)}</b></div>
+        <div class="plan-cell"><span class="lbl">Entry${p.live ? ' (live)' : ''}</span><b>${dp(p.entry)}</b></div>
         <div class="plan-cell stop"><span class="lbl">Stop</span><b>${dp(p.stop)}</b></div>
         <div class="plan-cell take"><span class="lbl">Target</span><b>${dp(p.take)}</b></div>
         <div class="plan-cell"><span class="lbl">R:R</span><b>${p.rr.toFixed(1)}</b></div>
@@ -381,6 +402,53 @@ function renderBacktest() {
     <tbody>${rows}</tbody></table>`;
 }
 
+// One batched quote fetch, applied to the chart series and to the rendered
+// signals. Failures are silent by design: the bundled snapshot stays on screen
+// and the freshness line keeps reporting its age.
+async function refreshQuotes() {
+  if (!state.liveOn) return;
+  try {
+    const quotes = await fetchQuotes(PAIRS);
+    state.quotes = quotes;
+    state.quotesAt = Date.now();
+    renderChart();
+    renderSignals();
+    renderFreshness();
+  } catch (err) {
+    state.quotesError = err.message;
+    renderFreshness();
+  }
+}
+
+function startLivePolling() {
+  if (state.liveTimer) clearInterval(state.liveTimer);
+  state.liveTimer = setInterval(refreshQuotes, 60000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshQuotes();
+  });
+  window.addEventListener('focus', refreshQuotes);
+  // Keep the "updated Xs ago" figure honest between polls without refetching.
+  setInterval(renderFreshness, 5000);
+}
+
+// The freshness line states exactly what is live and what is a snapshot, so a
+// "Live" badge never sits next to a stale level.
+function renderFreshness() {
+  const host = $('#freshness');
+  if (!host) return;
+  const series = Object.values(state.bars || {}).find((b) => b && b.length);
+  const lastBar = series ? series[series.length - 1].t : null;
+  const barAgeD = lastBar ? Math.floor((Date.now() - lastBar) / 86400000) : null;
+  const qAgeS = state.quotesAt ? Math.round((Date.now() - state.quotesAt) / 1000) : null;
+  const pricePart = qAgeS == null
+    ? (lastBar ? `Prices: daily bars to ${new Date(lastBar).toISOString().slice(0, 10)}${barAgeD > 0 ? ` (${barAgeD}d old)` : ''}` : 'Prices unavailable')
+    : `Prices live (updated ${qAgeS}s ago)`;
+  const planPart = qAgeS == null
+    ? 'plans anchored to the last close'
+    : 'plan entries follow the live price, signal logic stays on daily bars';
+  host.textContent = `${pricePart} · calendar live · ${planPart}`;
+}
+
 function renderAll() {
   renderKPIs();
   renderSignals();
@@ -390,6 +458,7 @@ function renderAll() {
   renderBacktest();
   renderMsnr();
   renderUpcoming();
+  renderFreshness();
   renderStrategies();
   renderChartToggles();
   renderChart();
@@ -482,7 +551,8 @@ function renderChartToggles() {
 
 function renderChart() {
   const sym = state.chartSymbol;
-  const series = state.hourly?.[sym];
+  const base = state.hourly?.[sym];
+  const series = base && state.quotes[sym] ? withLiveClose(base, state.quotes[sym]) : base;
   const canvas = $('#chart');
   if (!canvas) return;
   if (!series || series.length < 60) {
@@ -499,7 +569,8 @@ function renderChart() {
   if (show.fvgs) opts.fvgs = fvgsAt(ctx, end);
   if (show.marks) opts.marks = marksAt(ctx, end);
   drawChart(canvas, series, opts);
-  $('#chart-range').textContent = `${sym} · ${state.chartMode} · last ${state.chartBars} bars`;
+  const isLive = !!(base && state.quotes[sym] && series[series.length - 1]?.live);
+  $('#chart-range').textContent = `${sym} · ${state.chartMode} · last ${state.chartBars} bars${isLive ? ' · live' : ''}`;
   $('#chart-read').innerHTML = readChart(ctx, end, series);
 }
 
@@ -691,12 +762,7 @@ async function boot() {
     $('#live-dot').classList.add('on');
     $('#status-text').textContent = 'Live';
     $('#updated').textContent = new Date(state.asOf).toISOString().slice(0, 16).replace('T', ' ');
-    const barSeries = state.bars && Object.values(state.bars).find((b) => b && b.length);
-    const lastBar = barSeries ? barSeries[barSeries.length - 1].t : null;
-    const ageH = lastBar ? (state.asOf - lastBar) / 3600000 : null;
-    $('#freshness').textContent = lastBar
-      ? `Prices as of ${new Date(lastBar).toISOString().slice(0, 10)}${ageH > 24 ? ` (${Math.floor(ageH / 24)}d old)` : ''} · calendar live`
-      : 'calendar live';
+    renderFreshness();
   } catch (err) {
     $('#live-dot').classList.add('err');
     $('#status-text').textContent = 'Offline — bundled data';
@@ -714,6 +780,9 @@ async function boot() {
       $('#status-text').textContent = 'Live calendar';
     }
   } catch { /* keep bundled data */ }
+
+  await refreshQuotes();
+  startLivePolling();
 }
 
 boot();
