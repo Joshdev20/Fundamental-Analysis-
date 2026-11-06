@@ -125,6 +125,93 @@ export function eventPairDirection(event, pair, model, opts) {
  * events: array of normalized events (with actual values). Only events within
  * `windowDays` of `asOf` contribute.
  */
+// Pre-release signals from the consensus alone.
+//
+// These are shown so the platform says something *before* a release prints,
+// which is what a trader actually needs for an event like NFP. They are NOT
+// backtest-validated and must never be presented as if they were: the
+// consensus-change direction has no measured directional edge on this data. The
+// measured hit rate of the signalled direction sits at 49-52% across horizons,
+// and it *worsens* as the consensus change gets larger (|z| 2-3 gives -18bp over
+// ten days), so the big pre-release bets are the worst of them. The only
+// consistent effect is a small drift continuation, which is what the
+// confirmation-stop entry captures after the print.
+//
+// `edge: false` and `provisional: true` travel with every one of these signals so
+// the UI cannot quietly promote them to the same footing as a post-release call.
+export function buildForecastSignals(events, model, { asOf = Date.now(), lookaheadDays = 7, horizonDays = 5, minScoreBps = 2, minZ = 1 } = {}) {
+  const soon = asOf + lookaheadDays * 86400000;
+  const stats = model.forecastStats || {};
+  const candidates = [];
+  for (const e of events) {
+    if (!Number.isFinite(e.ts) || e.ts < asOf || e.ts > soon) continue;
+    if (e.importance !== 1) continue;
+    if (e.forecast == null || e.previous == null) continue;
+    const s = stats[indicatorKey(e)];
+    if (!s || !s.sigma || s.n < MIN_STATS_N) continue;
+    const zf = clamp((e.forecast - e.previous) / s.sigma, -3, 3);
+    if (Math.abs(zf) < minZ) continue;
+    candidates.push({ e, zf });
+  }
+
+  const signals = [];
+  for (const pair of PAIRS) {
+    const drivers = [];
+    let score = 0;
+    for (const { e, zf } of candidates) {
+      if (e.currency !== pair.base && e.currency !== pair.quote) continue;
+      const { polarity, tag } = classify(e.title, e.indicator);
+      const dir = pairDirection(pair, e.currency, polarity * Math.sign(zf) > 0);
+      if (dir === 0) continue;
+      // The consensus change carries no measured beta, so the expected move is
+      // the surprise-scale magnitude rather than a fitted response.
+      const contribution = dir * Math.abs(zf) * 10;
+      score += contribution;
+      drivers.push({
+        title: e.title, ts: e.ts, tag, newsType: newsTypeOf(tag),
+        z: zf, currencyBullish: polarity * Math.sign(zf) > 0,
+        direction: dir, contribution: +contribution.toFixed(2),
+        hitRate: null, hitSample: 0,
+      });
+    }
+    if (!drivers.length) continue;
+    if (Math.abs(score) < minScoreBps) continue;
+    drivers.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+    const top = drivers[0];
+
+    signals.push({
+      symbol: pair.symbol,
+      label: pair.label,
+      kind: pair.kind,
+      base: pair.base,
+      quote: pair.quote,
+      action: score > 0 ? 'BUY' : 'SELL',
+      fundAction: score > 0 ? 'BUY' : 'SELL',
+      techAction: null,
+      newsType: top.newsType || newsTypeOf(top.tag),
+      release: top.title,
+      releasedAt: null,
+      scheduledAt: top.ts,
+      provisional: true,
+      analysis: 'forecast',
+      direction: Math.sign(score),
+      scoreBps: +score.toFixed(2),
+      confidence: 50,
+      expectedMoveBps: +Math.abs(score).toFixed(2),
+      hasEdge: false,
+      fundOk: false,
+      techOk: false,
+      conflict: false,
+      plan: null,
+      tech: null,
+      top,
+      drivers,
+    });
+  }
+  signals.sort((a, b) => (a.scheduledAt || 0) - (b.scheduledAt || 0) || b.confidence - a.confidence);
+  return signals;
+}
+
 export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3, horizonDays = 5, minScoreBps = 2, minZ = 2, requireEdge = false, bars = null, msnr = null, msnrOptions = {} } = {}) {
   const windowMs = windowDays * 86400000;
   const opts = { minConfluence: 4, horizon: 3, requireStructure: true, rr: 2, minR: 1.5, profile: 'balanced', requireTech: false, ...msnrOptions };

@@ -136,6 +136,10 @@ async function main() {
     costBps,
     range: { from: events[0]?.date, to: events.at(-1)?.date, events: events.length },
     stats: indicatorStats(events),
+    // Consensus-change scale, for the forecast-only mode. The edge is not
+    // validated (see README), but the scale is needed to show anything at all
+    // before a release prints.
+    forecastStats: indicatorStats(events, 'consensus'),
     betas: betasOut,
     pooledBetas: pooledOut,
     hitRates: bucketOut,

@@ -1,4 +1,4 @@
-import { buildSignals, zOf } from './lib/engine.mjs';
+import { buildSignals, buildForecastSignals, zOf } from './lib/engine.mjs';
 import { msnrPlan } from './lib/alchemist.mjs';
 import { drawChart } from './lib/chart.mjs';
 import { classify as classifyTitle, newsTypeOf as newsTypeLabel } from './lib/polarity.mjs';
@@ -22,6 +22,11 @@ const state = {
   quotesAt: null,
   liveTimer: null,
   liveOn: true,
+  forecastLookahead: 7,
+  forecastSignals: [],
+  entryStyle: 'confirm',
+  confirmAtr: 0.25,
+  confirmWindow: 3,
   msnr: { plan: msnrPlan },
   msnrOn: true,
   msnrRequire: false,
@@ -33,7 +38,7 @@ const state = {
   chartShow: { levels: true, ocls: true, zones: true, fvgs: true, marks: true },
   msnrScope: 'fx',
   analysisFilter: 'signal',
-  pip: { slPips: 30, tpPips: 70, slAtr: 0.4 },
+  pip: { slPips: 30, tpPips: 30, slAtr: 0.75, confirmAtr: 0.25, confirmWindow: 3 },
   backtest: null,
   track: null,
   msnrBacktest: null,
@@ -75,6 +80,11 @@ async function liveCalendar() {
 function normalize(r) {
   const ts = Date.parse(r.date || r.time || r.timestamp);
   if (!Number.isFinite(ts)) return null;
+  // TradingView sends a rounded display value (`forecast`: 65) alongside the raw
+  // one (`forecastRaw`: 65000). The model is fitted on raw units, so taking the
+  // display value shrinks every live surprise by the scale factor — a 60k NFP
+  // surprise becomes 60 — and no live release can ever clear the z threshold.
+  // The historical pipeline already prefers raw; this side did not.
   const num = (v) => (v == null || v === '' ? null : Number(v));
   return {
     id: String(r.id ?? r.event_id ?? `${r.title}-${ts}`),
@@ -83,10 +93,11 @@ function normalize(r) {
     currency: (r.currency || r.country || '').toUpperCase().slice(0, 3),
     importance: r.importance ?? r.impact ?? 0,
     ts,
-    actual: num(r.actual ?? r.actualRaw),
-    forecast: num(r.forecast ?? r.forecastRaw),
-    previous: num(r.previous ?? r.previousRaw),
+    actual: num(r.actualRaw ?? r.actual),
+    forecast: num(r.forecastRaw ?? r.forecast),
+    previous: num(r.previousRaw ?? r.previous),
     unit: r.unit || '',
+    scale: r.scale || '',
   };
 }
 
@@ -119,8 +130,15 @@ function fmtWhen(ts) {
   return `in ${days} days (${d.toISOString().slice(5, 10)} ${time})`;
 }
 
-// Releases that are scheduled but have no actual value yet. There is nothing to
-// trade, so no direction is shown — only what is coming and when.
+// Releases that are scheduled but have not printed. Each one now carries a
+// consensus lean — the direction the forecast implies, from the same
+// classification the post-release model uses. This is what lets the platform
+// say something before NFP rather than going silent until the number lands.
+//
+// The lean is explicitly NOT backtested, and the panel says so: the
+// consensus-change direction has no measured edge on this data (49-52% across
+// horizons). It is a heads-up, not a call. The traded call is still the
+// post-release one.
 function renderUpcoming() {
   const host = $('#upcoming');
   if (!host) return;
@@ -131,6 +149,15 @@ function renderUpcoming() {
     .sort((a, b) => a.ts - b.ts);
   const seen = new Set();
   const uniq = rows.filter((e) => (seen.has(e.title + e.ts) ? false : (seen.add(e.title + e.ts), true)));
+
+  // Index the pre-release leans by release so each row can show its direction.
+  const leans = new Map();
+  for (const s of state.forecastSignals || []) {
+    const key = `${s.release}|${s.scheduledAt}`;
+    if (!leans.has(key)) leans.set(key, []);
+    leans.get(key).push(s);
+  }
+
   $('#upcoming-sub').textContent = uniq.length ? `${uniq.length} scheduled in the next 7 days` : 'Nothing high-impact scheduled in the next 7 days';
   if (!uniq.length) {
     host.innerHTML = `<p class="empty">No high-impact releases are scheduled in the next 7 days. When one is, it appears here with its consensus forecast so you can see it coming.</p>`;
@@ -140,33 +167,50 @@ function renderUpcoming() {
     const { tag } = classifyTitle(e.title, e.indicator);
     const f = e.forecast == null ? '—' : e.forecast;
     const p = e.previous == null ? '—' : e.previous;
+    const lean = (leans.get(`${e.title}|${e.ts}`) || [])[0];
+    const leanBlock = lean
+      ? `<div class="lane-body">
+          <span class="news-type">${esc(newsTypeLabel(tag))}</span>
+          <span class="lean ${lean.action === 'BUY' ? 'up' : 'down'}">consensus leans ${lean.action}</span>
+          <span class="dim">e.g. ${esc(lean.label)}</span>
+        </div>
+        <p class="hint">Pre-release lean from the consensus vs the previous print (${lean.top.z > 0 ? '+' : ''}${lean.top.z.toFixed(1)}σ). <b>Not backtested</b> — the consensus alone has no measured edge here. The traded call is the post-release one.</p>`
+      : `<div class="lane-body">
+          <span class="news-type">${esc(newsTypeLabel(tag))}</span>
+          <span>consensus ${esc(String(f))} · previous ${esc(String(p))}</span>
+        </div>
+        <p class="hint">No consensus lean: the consensus moved less than one standard deviation from the previous print, so there is no direction to lean on.</p>`;
     return `<div class="sig upcoming">
       <div class="sig-head">
         <div><span class="sym">${esc(e.title)}</span> <span class="kind">${esc(e.currency)}</span></div>
         <div class="when">${esc(fmtWhen(e.ts))}</div>
       </div>
-      <div class="lane-body">
-        <span class="news-type">${esc(newsTypeLabel(tag))}</span>
-        <span>consensus ${esc(String(f))} · previous ${esc(String(p))}</span>
-      </div>
-      <p class="hint">No call yet — it has not printed. The signal appears here once the actual value is published and the surprise is large enough.</p>
+      ${leanBlock}
     </div>`;
   }).join('');
 }
 
-// Move a plan's entry to the live price, keeping the risk distance the model
-// chose. The signal logic stays on daily bars — only the entry anchor moves, so
-// the displayed plan is at the price you could actually fill it.
+// Market plans fill at the close, so their entry tracks the live price and the
+// displayed plan sits where you could actually fill it. Trigger and limit plans
+// are fixed levels by definition: a confirmation stop is a break of the release
+// bar, so moving it to the live price would silently change what the backtest
+// measured. Those keep their levels and just report the live price alongside.
 function withLivePlan(x) {
   const p = x.plan;
   const q = state.quotes[x.symbol];
-  if (!p || !q || !q.price || !(p.entry > 0) || !(p.risk > 0)) return p;
+  if (!p || !q || !q.price) return p;
+  const priced = { ...p, current: q.price };
+  if (p.kind !== 'pip' || !(p.entry > 0) || !(p.risk > 0)) return priced;
   const dir = x.action === 'BUY' ? 1 : -1;
   const entry = q.price;
-  const stop = dir > 0 ? entry - p.risk : entry + p.risk;
-  const take = dir > 0 ? entry + p.reward : entry - p.reward;
   const dp = (v) => (v >= 100 ? +v.toFixed(2) : v >= 1 ? +v.toFixed(4) : +v.toFixed(5));
-  return { ...p, entry: dp(entry), stop: dp(stop), take: dp(take), live: true };
+  return {
+    ...priced,
+    entry: dp(entry),
+    stop: dp(dir > 0 ? entry - p.risk : entry + p.risk),
+    take: dp(dir > 0 ? entry + p.reward : entry - p.reward),
+    live: true,
+  };
 }
 
 // One sentence per card saying what the call is and whether to act on it.
@@ -257,14 +301,20 @@ function renderSignals() {
       const dp = (v) => (v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(4) : v.toFixed(5));
       const order = p.order ? `<span class="order">${esc(p.order)}</span>` : '';
       const pipLine = p.pips ? `<div class="sig-row"><span class="lbl">Distances</span><span class="sig-meta">stop ${p.pips.sl} pips · target ${p.pips.tp} pips</span></div>` : '';
+      const isTrigger = p.kind === 'confirm' || p.kind === 'fib';
+      const currentRow = isTrigger && p.current
+        ? `<div class="sig-row"><span class="lbl">Now</span><span class="sig-meta">${dp(p.current)}${p.current !== p.entry ? ` · ${x.action === 'BUY' ? (p.current < p.entry ? 'waiting for the break up' : 'trigger already met') : (p.current > p.entry ? 'waiting for the break down' : 'trigger already met')}` : ''}</span></div>`
+        : '';
+      const entryLabel = p.kind === 'confirm' ? 'Trigger' : p.kind === 'fib' ? 'Limit' : 'Entry';
+      const liveTag = p.live ? ' (live)' : isTrigger && p.current ? ' (fixed)' : '';
       planBlock = `<div class="plan">
-        <div class="plan-cell"><span class="lbl">Entry${p.live ? ' (live)' : ''}</span><b>${dp(p.entry)}</b></div>
+        <div class="plan-cell"><span class="lbl">${entryLabel}${liveTag}</span><b>${dp(p.entry)}</b></div>
         <div class="plan-cell stop"><span class="lbl">Stop</span><b>${dp(p.stop)}</b></div>
         <div class="plan-cell take"><span class="lbl">Target</span><b>${dp(p.take)}</b></div>
         <div class="plan-cell"><span class="lbl">R:R</span><b>${p.rr.toFixed(1)}</b></div>
       </div>
       ${pipLine}
-      <div class="sig-row"><span class="lbl">Risk</span><span class="sig-meta">${p.riskPct}% of price ${order}</span></div>`;
+      <div class="sig-row"><span class="lbl">Risk</span><span class="sig-meta">${p.riskPct}% of price ${order}</span></div>${currentRow}`;
     }
 
     return `<article class="sig ${cls}">
@@ -443,9 +493,15 @@ function renderFreshness() {
   const pricePart = qAgeS == null
     ? (lastBar ? `Prices: daily bars to ${new Date(lastBar).toISOString().slice(0, 10)}${barAgeD > 0 ? ` (${barAgeD}d old)` : ''}` : 'Prices unavailable')
     : `Prices live (updated ${qAgeS}s ago)`;
+  // The entry style decides what the live price does to a plan. A market plan
+  // re-anchors to it; a confirmation stop is a fixed break of the release bar and
+  // must not move, or the displayed plan stops matching the measured win rate.
+  const triggerEntry = state.entryStyle !== 'pip';
   const planPart = qAgeS == null
     ? 'plans anchored to the last close'
-    : 'plan entries follow the live price, signal logic stays on daily bars';
+    : triggerEntry
+      ? 'trigger levels fixed at the release bar, signal logic stays on daily bars'
+      : 'plan entries follow the live price, signal logic stays on daily bars';
   host.textContent = `${pricePart} · calendar live · ${planPart}`;
 }
 
@@ -725,7 +781,20 @@ function refreshSignals() {
     requireEdge: state.requireEdge,
     bars: state.msnrOn ? state.bars : null,
     msnr: state.msnrOn ? state.msnr : null,
-    msnrOptions: { planStyle: 'pip', minConfluence: 4, horizon: 5, requireStructure: true, requireTech: state.msnrRequire, ...state.pip },
+    // These must mirror the confirmation goal in tools/backtest-msnr.mjs exactly,
+    // or the card shows a plan the measured numbers never described. minRR in
+    // particular defaults to 3 upstream, which would turn the measured 1:1 into a
+    // 1:3 the win rate does not apply to.
+    msnrOptions: { planStyle: state.entryStyle, minConfluence: 4, horizon: 5, requireStructure: true, requireTech: state.msnrRequire, minRR: 1, maxRiskPct: 3, ...state.pip },
+  });
+  // Pre-release calls from the consensus alone, shown so the platform has
+  // something to say before a release prints. Kept in their own list so they can
+  // never be mixed into the validated ledger.
+  state.forecastSignals = buildForecastSignals(state.events, state.model, {
+    asOf: state.asOf,
+    lookaheadDays: state.forecastLookahead,
+    minScoreBps: state.minScoreBps,
+    minZ: 1,
   });
 }
 

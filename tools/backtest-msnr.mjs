@@ -19,7 +19,7 @@ import { pairDirection, pairsForCurrency, bucketOf } from '../public/lib/pairs.m
 import { barAtOrAfter } from '../lib/bars.mjs';
 import { attachZ } from '../lib/response.mjs';
 import { buildContext, alchemist } from '../public/lib/alchemist.mjs';
-import { resolvePlan } from '../public/lib/msnr.mjs';
+import { resolvePlan, resolveConfirmation } from '../public/lib/msnr.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.resolve(__dirname, '..', 'data');
@@ -29,6 +29,10 @@ const HOLDS = [1, 2, 3, 5, 10];
 const GOALS = {
   winrate: { label: 'Max win rate', planStyle: 'pip', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5 },
   balanced: { label: 'Balanced (30 pip stop / 70 pip target)', planStyle: 'pip', slPips: 30, tpPips: 70, slAtr: 0.4, minRR: 2.3, horizon: 5 },
+  // Confirmation stop: wait for price to break the release bar by 0.25 ATR
+  // before filling, rather than buying the close of the spike. Order is cancelled
+  // if the break never comes.
+  confirmation: { label: 'Confirmation stop (0.25 ATR break, 1:1)', planStyle: 'confirm', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5, confirmAtr: 0.25, confirmWindow: 3 },
 };
 const GATE = { minConfluence: 4, requireStructure: true, minZ: 2 };
 
@@ -86,11 +90,15 @@ function summarize(rows) {
 
 function backtest(goal, filter) {
   const trades = [];
+  let cancelled = 0;
   for (const c of cands) {
     if (filter && !filter(c)) continue;
     const res = alchemist(c.bars, c.ei, c.dir, ctxCache[c.symbol], { ...goal, symbol: c.symbol, ...GATE });
     if (!res.ok) continue;
-    const out = resolvePlan(c.bars, c.ei, c.dir, res.plan, goal.horizon);
+    const out = goal.planStyle === 'confirm'
+      ? resolveConfirmation(c.bars, c.ei, c.dir, res.plan, { confirmWindow: goal.confirmWindow, horizon: goal.horizon })
+      : resolvePlan(c.bars, c.ei, c.dir, res.plan, goal.horizon);
+    if (out.outcome === 'cancelled') { cancelled++; continue; }
     trades.push({
       y: c.y, tag: c.tag, symbol: c.symbol,
       r: out.r, outcome: out.outcome,
@@ -109,6 +117,7 @@ function backtest(goal, filter) {
     if (r.length >= 8) bySymbol[s] = summarize(r);
   }
   const overall = summarize(trades);
+  overall.cancelled = cancelled;
   const yearsWithData = Object.values(byYear).filter((v) => v.n >= 8);
   return {
     overall, byYear, byTag, bySymbol,

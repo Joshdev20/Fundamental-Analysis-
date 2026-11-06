@@ -341,6 +341,18 @@ footer b { color: var(--ink); }
 .sig.upcoming { opacity: .92; }
 .sig.upcoming .when { color: var(--dim); font-size: 11px; }
 .sig.upcoming .hint { margin: 6px 0 0; color: var(--dim); font-size: 10.5px; }
+/* Pre-release consensus lean. Muted on purpose: it is a heads-up, not a call,
+   and must not read like the post-release cards. */
+.sig.upcoming .lean {
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px dashed currentColor;
+  opacity: .8;
+}
+.sig.upcoming .lean.up { color: var(--up); }
+.sig.upcoming .lean.down { color: var(--down); }
+.sig.upcoming .hint b { color: var(--ink); font-weight: 600; }
 
 /* Plain-English verdict on each call */
 .verdict { margin: 8px 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink); opacity: .9; }

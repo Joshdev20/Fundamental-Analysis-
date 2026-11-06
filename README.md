@@ -234,8 +234,9 @@ produced.
 
 | Model | What it needs | Calls | Win rate | PF | Expectancy |
 |---|---|---|---|---|---|
-| Fundamentals + chart, category filter | big surprise **and** the chart agrees **and** the news type has a proven prior record | 273 | **58.7%** | 1.43 | +0.175R |
-| Fundamentals + chart, no filter | big surprise and the chart agrees | 408 | 56.0% | 1.28 | +0.121R |
+| Fundamentals + chart, **confirmation stop** | big surprise, chart agrees, entry waits for a 0.25 ATR break of the release bar | 620 | **61.2%** | 1.54 | +0.206R |
+| Fundamentals + chart, market entry | big surprise and the chart agrees, fill at the release-bar close | 832 | 54.0% | 1.18 | +0.078R |
+| Fundamentals + chart, category filter | big surprise **and** the chart agrees **and** the news type has a proven prior record | 273 | 58.7% | 1.43 | +0.175R |
 | APA `trend+fvg`, 1:0.5 target | structure + imbalance, tiny target | 10,150 | 64.5% | 0.87 | −0.046R |
 | TNC key levels, short side | A-shaped level or bearish OCL, 1:1 | 35,199 | 52.1% | 1.08 | +0.04R |
 | TNC key levels, long side | V-shaped level or bullish OCL, 1:1 | 40,867 | 44.4% | 0.80 | −0.11R |
@@ -255,6 +256,45 @@ every genuine NFP beat scored z ≈ 0 and the largest release on the platform co
 never produce a call. The IQR ignores tails, so no one bad row can silence an
 indicator. After the fix an NFP beat of +55k scores z 0.54, and a 2σ call needs a
 surprise of roughly ±205k — which about 10% of NFP releases clear.
+
+### How the entry is filled — and why it matters more than the filter
+
+The largest single improvement on the platform is not the model, it is *where the
+trade is filled*. Filling at the release-bar close scores 54.0%. Waiting for
+price to break that close by 0.25 ATR scores **61.2%**, and turns 11 of 12 years
+profitable against 7 of 12.
+
+The reason is that the release-bar close is usually the extreme of the spike. The
+post-release drift continues, so the break entry pays a fraction of an ATR more
+but avoids being filled at the worst tick of the bar.
+
+The obvious alternative — a **limit** order waiting for a pullback — is worse, and
+measurably so: 48-51% across every pullback depth and fill window tested. The move
+after a release is continuation, not mean reversion, so waiting for a pullback
+mostly fills the trades that then keep going against you. The app therefore
+defaults to a confirmation **stop** order, labelled as such on the card, and shows
+the live price next to the trigger so you can see whether the break has happened.
+
+Both entry styles are measured by `tools/backtest-msnr.mjs` (`npm run data:msnr`).
+
+### Pre-release leans — shown, but not a call
+
+The platform can say something *before* a release prints, which is what you
+actually need for NFP. `buildForecastSignals` reads the consensus against the
+previous print and states a direction on the Upcoming panel, so the calendar
+carries a lean instead of going silent until the number lands.
+
+**This is not backtested, and the panel says so.** The consensus-change direction
+has no measured directional edge on this data: the signalled direction hit 49-52%
+across 1, 3, 5 and 10-day holds on 41,000 high-importance releases, and it gets
+*worse* as the consensus change grows — a 2-3σ consensus change returned **-18bp
+over ten days**. Fading it is not an edge either (PF 1.06-1.22 on thin samples).
+The one consistent effect is a small drift continuation, which is exactly what the
+confirmation-stop entry captures *after* the print.
+
+So the lean is a heads-up, not a call: it is rendered in a muted dashed style,
+tagged `provisional`, and kept in its own list so it can never be counted in the
+validated ledger. The traded call remains the post-release one.
 
 ### Which news type each call came from
 
