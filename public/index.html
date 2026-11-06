@@ -48,6 +48,21 @@
 
       <section id="kpis" class="kpis" aria-label="Summary"></section>
 
+      <!-- Upcoming releases -->
+      <details class="panel" id="upcoming-panel" open>
+        <summary>
+          <span class="h">
+            <span class="t">Upcoming releases</span>
+            <span class="sub" id="upcoming-sub">High-impact news scheduled but not yet released</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <p class="note">These have not printed yet, so there is no actual value to trade. They appear here so you can see what is coming — today's NFP shows up on the day, before the number.</p>
+          <div id="upcoming" class="signals"></div>
+        </div>
+      </details>
+
       <!-- Open calls -->
       <details class="panel" id="signals-panel" open>
         <summary>
@@ -58,13 +73,18 @@
           <span class="chev" aria-hidden="true"></span>
         </summary>
         <div class="body">
+          <p class="note"><b>How to read a call.</b> Each card splits into two independent tests.
+            <b>Fundamental</b> — what the economic release implies: which news type it was, how big the
+            surprise was in σ, and the expected move in basis points. <b>Technical (MSNR)</b> — whether
+            the chart is positioned to let that move happen. A call is only tradeable when both agree;
+            the one-line verdict on each card says which case it is.</p>
           <div class="controls">
             <label>Window
               <select id="window-days">
-                <option value="7">7d</option>
-                <option value="14">14d</option>
-                <option value="30" selected>30d</option>
-                <option value="60">60d</option>
+                <option value="7" selected>last 7 days</option>
+                <option value="14">last 14 days</option>
+                <option value="30">last 30 days</option>
+                <option value="60">last 60 days</option>
               </select>
             </label>
             <label>Hold

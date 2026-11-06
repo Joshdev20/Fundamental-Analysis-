@@ -90,6 +90,7 @@ export function evaluateEvent(event, model, { horizonDays = 5, bucket, instrumen
 
   return {
     tag,
+    ts: event.ts,
     currency: event.currency,
     bucket: ccy,
     country: event.country,
@@ -176,7 +177,10 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
     if (bars && msnr) {
       const series = bars[pair.symbol];
       if (series && series.length > 60) {
-        const res = msnr.plan(series, Math.sign(score), opts);
+        // The instrument must travel with the options: pip size is per-symbol
+        // (0.0001 for FX, 0.1 for gold, 1.0 for bitcoin), and without it every
+        // plan is priced as if it were a currency pair.
+        const res = msnr.plan(series, Math.sign(score), { ...opts, symbol: pair.symbol });
         tech = res ? { score: res.score, factors: res.factors, structure: res.structure } : null;
         if (opts.requireTech && (!res || !res.ok)) continue;
         plan = res && res.ok ? res.plan : null;
@@ -213,6 +217,7 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
       techAction,
       newsType: top.newsType || newsTypeOf(top.tag),
       release: top.title,
+      releasedAt: top.ts ?? null,
       analysis,
       direction: Math.sign(score),
       scoreBps: +score.toFixed(2),
@@ -228,7 +233,8 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
       drivers,
     });
   }
-  signals.sort((a, b) => b.confidence - a.confidence || Math.abs(b.scoreBps) - Math.abs(a.scoreBps));
+  // Newest release first, so the card at the top is the most recent news.
+  signals.sort((a, b) => (b.releasedAt || 0) - (a.releasedAt || 0) || b.confidence - a.confidence);
   return signals;
 }
 

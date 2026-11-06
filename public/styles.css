@@ -336,3 +336,11 @@ footer b { color: var(--ink); }
 .news-type { font-weight: 600; color: var(--ink); }
 .lane-body.muted { color: var(--dim); font-size: 10.5px; }
 .lane-body.muted span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+/* Upcoming releases */
+.sig.upcoming { opacity: .92; }
+.sig.upcoming .when { color: var(--dim); font-size: 11px; }
+.sig.upcoming .hint { margin: 6px 0 0; color: var(--dim); font-size: 10.5px; }
+
+/* Plain-English verdict on each call */
+.verdict { margin: 8px 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink); opacity: .9; }

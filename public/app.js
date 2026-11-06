@@ -1,6 +1,7 @@
 import { buildSignals, zOf } from './lib/engine.mjs';
 import { msnrPlan } from './lib/alchemist.mjs';
 import { drawChart } from './lib/chart.mjs';
+import { classify as classifyTitle, newsTypeOf as newsTypeLabel } from './lib/polarity.mjs';
 import { prepare as tncPrepare, TNC_LADDER } from './lib/tnc.mjs';
 import { prepareApa, apaSignals, apaComponents } from './lib/apa.mjs';
 
@@ -25,7 +26,7 @@ const state = {
   chartBars: 160,
   chartShow: { levels: true, ocls: true, zones: true, fvgs: true, marks: true },
   msnrScope: 'fx',
-  analysisFilter: 'all',
+  analysisFilter: 'signal',
   pip: { slPips: 30, tpPips: 70, slAtr: 0.4 },
   backtest: null,
   track: null,
@@ -98,6 +99,73 @@ function renderKPIs() {
   ].join('');
 }
 
+// Human wording for when a release happened, so a card is never ambiguous.
+function fmtWhen(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const now = new Date(state.asOf);
+  const days = Math.round((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) / 86400000);
+  const time = d.toISOString().slice(11, 16);
+  if (days === 0) return `today ${time}`;
+  if (days === -1) return `yesterday ${time}`;
+  if (days === 1) return `tomorrow ${time}`;
+  if (days < 0) return `${-days} days ago (${d.toISOString().slice(5, 10)} ${time})`;
+  return `in ${days} days (${d.toISOString().slice(5, 10)} ${time})`;
+}
+
+// Releases that are scheduled but have no actual value yet. There is nothing to
+// trade, so no direction is shown — only what is coming and when.
+function renderUpcoming() {
+  const host = $('#upcoming');
+  if (!host) return;
+  const now = state.asOf;
+  const horizon = now + 7 * 86400000;
+  const rows = state.events
+    .filter((e) => e.importance === 1 && e.actual == null && e.ts > now && e.ts <= horizon)
+    .sort((a, b) => a.ts - b.ts);
+  const seen = new Set();
+  const uniq = rows.filter((e) => (seen.has(e.title + e.ts) ? false : (seen.add(e.title + e.ts), true)));
+  $('#upcoming-sub').textContent = uniq.length ? `${uniq.length} scheduled in the next 7 days` : 'Nothing high-impact scheduled in the next 7 days';
+  if (!uniq.length) {
+    host.innerHTML = `<p class="empty">No high-impact releases are scheduled in the next 7 days. When one is, it appears here with its consensus forecast so you can see it coming.</p>`;
+    return;
+  }
+  host.innerHTML = uniq.map((e) => {
+    const { tag } = classifyTitle(e.title, e.indicator);
+    const f = e.forecast == null ? '—' : e.forecast;
+    const p = e.previous == null ? '—' : e.previous;
+    return `<div class="sig upcoming">
+      <div class="sig-head">
+        <div><span class="sym">${esc(e.title)}</span> <span class="kind">${esc(e.currency)}</span></div>
+        <div class="when">${esc(fmtWhen(e.ts))}</div>
+      </div>
+      <div class="lane-body">
+        <span class="news-type">${esc(newsTypeLabel(tag))}</span>
+        <span>consensus ${esc(String(f))} · previous ${esc(String(p))}</span>
+      </div>
+      <p class="hint">No call yet — it has not printed. The signal appears here once the actual value is published and the surprise is large enough.</p>
+    </div>`;
+  }).join('');
+}
+
+// One sentence per card saying what the call is and whether to act on it.
+function verdictOf(x) {
+  const what = x.fundOk
+    ? `The ${x.newsType.toLowerCase()} release came in ${x.top && x.top.z > 0 ? 'above' : 'below'} consensus, which points ${x.fundAction.toLowerCase()} on ${x.label}.`
+    : `The ${x.newsType.toLowerCase()} release was a surprise, but this news type has not beaten a coin flip on this instrument.`;
+  const chart = x.tech ? (x.techOk ? ' The chart agrees.' : ' The chart does not confirm.') : '';
+  const action = x.analysis === 'confluence'
+    ? 'Both tests pass — this is a tradeable call.'
+    : x.analysis === 'technical'
+      ? 'Only the chart agrees, with no fundamental driver — treat as a technical setup.'
+      : x.analysis === 'conflict'
+        ? 'Fundamentals and the chart disagree — stand aside.'
+        : x.analysis === 'fundamental'
+          ? 'Fundamental only, unconfirmed by the chart — watch rather than trade.'
+          : 'Neither test passes — not a trade.';
+  return what + chart + ' ' + action;
+}
+
 function renderSignals() {
   const host = $('#signals');
   const sub = $('#signals-sub');
@@ -105,15 +173,21 @@ function renderSignals() {
   const counts = all.reduce((a, x) => { a[x.analysis] = (a[x.analysis] || 0) + 1; return a; }, {});
   const f = state.analysisFilter;
   const s = f === 'all' ? all : all.filter((x) => f === 'signal' ? (x.analysis === 'confluence' || x.analysis === 'technical') : x.analysis === f);
-  sub.textContent = `${s.length} of ${all.length} calls · ${state.horizonDays}-day hold · ${counts.confluence || 0} confluence, ${counts.technical || 0} technical, ${counts.fundamental || 0} fundamental, ${counts.conflict || 0} conflict`;
+  const tradeable = (counts.confluence || 0) + (counts.technical || 0);
+  sub.textContent = s.length === all.length
+    ? `${all.length} calls in the last ${state.windowDays} days · ${tradeable} tradeable · ${state.horizonDays}-day hold`
+    : `${s.length} of ${all.length} calls · ${tradeable} tradeable in total`;
   if (!s.length) {
-    host.innerHTML = `<p class="empty">No calls match this filter in the window. ${f === 'all' ? `The model only fires on large surprises (|z| ≥ ${state.minZ}) — widen the window or lower the threshold.` : 'Try another analysis filter.'}</p>`;
+    const latest = all.length ? ` The most recent call was ${fmtWhen(all[0].releasedAt)}.` : '';
+    host.innerHTML = `<p class="empty"><b>Nothing to trade here.</b> A call is only made when a release beats consensus by at least ${state.minZ}σ. In the last ${state.windowDays} days ${all.length ? `there ${all.length === 1 ? 'was' : 'were'} ${all.length} such release${all.length === 1 ? '' : 's'}, but none passed the ${f === 'signal' ? 'confirmation' : 'filter'} test` : 'no release was that large'}.${latest}${f === 'signal' ? ' Switch the filter to <b>All</b> to see the weaker calls.' : ''}${state.windowDays < 60 ? ' Or widen the window.' : ''}</p>`;
     return;
   }
   host.innerHTML = s.map((x) => {
     const pct = Math.max(0, Math.min(100, x.confidence));
     const cls = x.action === 'BUY' ? 'buy' : 'sell';
-    const badge = x.hasEdge ? `<span class="badge edge">proven edge</span>` : `<span class="badge soft">unproven</span>`;
+    const badge = x.hasEdge
+      ? `<span class="badge edge" title="This news type beat a coin flip on this instrument, on at least 30 past releases">historically > 50%</span>`
+      : `<span class="badge soft" title="This news type has not beaten a coin flip on this instrument — the direction is not reliable">no measured edge</span>`;
     const kind = x.kind && x.kind !== 'fx' ? `<span class="kind">${esc(x.kind)}</span>` : '';
 
     const ANALYSIS = {
@@ -125,6 +199,7 @@ function renderSignals() {
     };
     const [aCls, aLabel] = ANALYSIS[x.analysis] || ANALYSIS.weak;
     const tag = `<span class="tag ${aCls}" title="${esc(aLabel)}">${aLabel}</span>`;
+    const verdict = `<p class="verdict">${esc(verdictOf(x))}</p>`;
 
     // Fundamental block: the release, its surprise, and the measured edge.
     const fundRow = `<div class="lane fund">
@@ -132,9 +207,9 @@ function renderSignals() {
         <span class="lane-call ${x.fundAction === 'BUY' ? 'buy' : 'sell'}">${x.fundAction}</span></div>
       <div class="lane-body">
         <span class="news-type">${esc(x.newsType || 'Other')}</span>
-        <span>z ${x.top ? x.top.z.toFixed(1) : '—'} · edge ${fmtBps(x.scoreBps)} · n ${fmtNum(x.top?.hitSample)}</span>
+        <span>surprise ${x.top ? x.top.z.toFixed(1) : '—'}σ · expected ${fmtBps(x.scoreBps)} · from ${fmtNum(x.top?.hitSample)} past releases</span>
       </div>
-      ${x.release ? `<div class="lane-body muted"><span>Release: ${esc(x.release)}</span></div>` : ''}
+      <div class="lane-body muted"><span>${esc(x.release || 'Release')} · released ${fmtWhen(x.releasedAt)}</span></div>
     </div>`;
 
     // Technical block: MSNR confluence, structure, and the factors that fired.
@@ -177,6 +252,7 @@ function renderSignals() {
         <span class="sig-act">${x.action}</span>
       </div>
       <div class="tags">${tag}</div>
+      ${verdict}
       ${fundRow}
       ${techRow}
       ${planBlock}
@@ -313,6 +389,7 @@ function renderAll() {
   renderCalendar();
   renderBacktest();
   renderMsnr();
+  renderUpcoming();
   renderStrategies();
   renderChartToggles();
   renderChart();
