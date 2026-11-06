@@ -8,7 +8,7 @@
 // skipped rather than averaged, because a fundamental call fighting the chart
 // is exactly the trade that produces a losing streak.
 
-import { atrSeries, swingHighs, swingLows, findZones, findFvgs, confluence, planTrade, structure, nearestZones } from './msnr.mjs';
+import { atrSeries, swingHighs, swingLows, findZones, findFvgs, confluence, planTrade, structure, nearestZones, fibPlan, fibLeg, pipPlan, pipSize } from './msnr.mjs';
 
 // Precompute the technical context for a whole series once, then reuse it per
 // bar. Zones/FVGs are recomputed on the window up to each bar so nothing later
@@ -40,7 +40,12 @@ export function contextAt(bars, ctx, at) {
 
 // Given a fundamental direction and the bar it lands on, decide whether the
 // technicals back it, and if so produce the plan.
-export function alchemist(bars, at, dir, ctx, { minConfluence = 2.5, horizon = 5, requireStructure = true, rr = 2, profile = 'balanced', minR = 1.5, bufferAtr = 0.15, maxRiskPct = 6 } = {}) {
+//
+// `planStyle` selects the entry method:
+//   'zone'  — market entry at the zone edge, stop beyond the zone (MSNR classic)
+//   'fib'   — limit order at a Fibonacci retracement, stop beyond 0.786, target
+//             at an extension. Naturally high reward:risk, ideal for small accounts.
+export function alchemist(bars, at, dir, ctx, { minConfluence = 2.5, horizon = 5, requireStructure = true, rr = 2, profile = 'balanced', minR = 1.5, bufferAtr = 0.15, maxRiskPct = 6, planStyle = 'zone', fib = {}, minRR = 3, symbol = '', slPips = 30, tpPips = 70, slAtr = 0.5, maxSlPips = 250, pip = {} } = {}) {
   const local = contextAt(bars, ctx, at);
   const price = bars[at].c;
   const conf = confluence(bars, at, dir, {
@@ -54,7 +59,12 @@ export function alchemist(bars, at, dir, ctx, { minConfluence = 2.5, horizon = 5
   const st = structure(bars, at);
   const structureOk = !requireStructure || st === 'range' || (dir > 0 ? st === 'up' : st === 'down');
 
-  const plan = planTrade(bars, at, dir, { atr: conf.atr, demand: conf.demand, supply: conf.supply }, { rr, profile, minR, bufferAtr, maxRiskPct });
+  const planCtx = { atr: conf.atr, demand: conf.demand, supply: conf.supply };
+  const plan = planStyle === 'fib'
+    ? fibPlan(bars, at, dir, planCtx, { profile, minRR, maxRiskPct: 3, ...fib })
+    : planStyle === 'pip'
+      ? pipPlan(bars, at, dir, planCtx, { symbol, slPips, tpPips, slAtr, maxSlPips, minRR, maxRiskPct, ...pip })
+      : planTrade(bars, at, dir, planCtx, { rr, profile, minR, bufferAtr, maxRiskPct });
 
   const ok = conf.score >= minConfluence && structureOk && plan != null;
   return { ok, score: conf.score, factors: conf.factors, structure: st, structureOk, plan, atr: conf.atr, price };

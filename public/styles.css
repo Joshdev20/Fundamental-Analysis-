@@ -173,9 +173,29 @@ main { padding: clamp(18px, 3vw, 30px) 0 8px; }
 .badge.soft { color: var(--warn); border-color: rgba(255, 200, 87, .35); }
 
 /* MSNR technicals on a signal card */
-.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .chip { font-size: 10px; letter-spacing: .02em; padding: 2px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2); text-transform: capitalize; }
 .chip.muted { color: var(--dim); }
+
+/* Fundamental vs technical: two labelled lanes so the two analyses never blur */
+.tags { margin-top: 8px; }
+.tag { display: inline-block; font-size: 10.5px; font-weight: 600; letter-spacing: .02em; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-2); }
+.tag.confluence { color: var(--up); border-color: rgba(61,220,151,.45); background: rgba(61,220,151,.09); }
+.tag.fund { color: #7fb2ff; border-color: rgba(127,178,255,.4); background: rgba(127,178,255,.08); }
+.tag.tech { color: #c39bff; border-color: rgba(195,155,255,.4); background: rgba(195,155,255,.08); }
+.tag.conflict { color: var(--down); border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.08); }
+.tag.weak { color: var(--dim); }
+.lane { margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--panel-2); }
+.lane.muted { opacity: .6; }
+.lane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lane-name { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); }
+.lane-call { font-size: 11px; font-weight: 700; letter-spacing: .03em; }
+.lane-call.buy { color: var(--up); }
+.lane-call.sell { color: var(--down); }
+.lane-call.none { color: var(--dim); }
+.lane-body { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 4px; font-size: 11px; color: var(--ink-2); }
+.plan .order { color: var(--dim); }
+
 .plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 1px; margin-top: 10px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .plan-cell { display: flex; flex-direction: column; gap: 2px; padding: 6px 7px; background: var(--panel-2); min-width: 0; }
 .plan-cell .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
@@ -298,3 +318,21 @@ footer b { color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Chart lab */
+.chart { display: block; width: 100%; height: 340px; margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.chips.toggle .chip { cursor: pointer; user-select: none; }
+.chips.toggle .chip.off { opacity: .4; text-decoration: line-through; }
+@media (max-width: 560px) { .chart { height: 260px; } }
+
+/* Strategy comparison table */
+#strat-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#strat-table th, #strat-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+#strat-table th:first-child, #strat-table td:first-child { text-align: left; }
+#strat-table thead th { color: var(--dim); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+#strat-table tr.best td { background: rgba(61,220,151,.07); }
+#strat-table td.name { font-weight: 600; }
+
+.news-type { font-weight: 600; color: var(--ink); }
+.lane-body.muted { color: var(--dim); font-size: 10.5px; }
+.lane-body.muted span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }

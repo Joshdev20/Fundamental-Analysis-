@@ -4,7 +4,7 @@
 // produce directional FX signals with an honest, historically-measured
 // confidence for each.
 
-import { classify, indicatorKey } from './polarity.mjs';
+import { classify, indicatorKey, newsTypeOf } from './polarity.mjs';
 import { PAIRS, pairDirection, bucketOf } from './pairs.mjs';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -153,7 +153,7 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
       if (dir === 0) continue;
       const contribution = dir * Math.abs(ev.contributionBps);
       score += contribution;
-      drivers.push({ ...ev, direction: dir, contribution: +contribution.toFixed(2) });
+      drivers.push({ ...ev, direction: dir, contribution: +contribution.toFixed(2), newsType: newsTypeOf(ev.tag) });
     }
     if (!drivers.length) continue;
     const absScore = Math.abs(score);
@@ -167,9 +167,10 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
     if (requireEdge && !hasEdge) continue;
 
     const confidence = confidenceOf(top.hitRate, top.hitSample);
+    const fundAction = score > 0 ? 'BUY' : 'SELL';
 
-    // MSNR technical overlay. When bars are supplied the call must also be
-    // backed by the chart, and it carries an entry / stop / target plan.
+    // MSNR technical overlay. When bars are supplied the call also gets a chart
+    // read and, if the chart agrees, a trade plan.
     let plan = null;
     let tech = null;
     if (bars && msnr) {
@@ -184,18 +185,43 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
       }
     }
 
+    // The two analyses are reported separately because they disagree, and that
+    // disagreement is information. The fundamentals say which way the release
+    // should push; MSNR says whether the chart is positioned to let it.
+    const fundOk = hasEdge && confidence >= (opts.minConfidence ?? 52);
+    const techAction = tech ? (score > 0 ? 'BUY' : 'SELL') : null;
+    const techOk = !!(tech && tech.score >= (opts.minConfluence ?? 4));
+    const conflict = techAction != null && techAction !== fundAction;
+
+    let analysis;
+    if (!techAction) analysis = 'fundamental';
+    else if (fundOk && techOk && !conflict) analysis = 'confluence';
+    else if (fundOk && conflict) analysis = 'conflict';
+    else if (techOk && !fundOk) analysis = 'technical';
+    else analysis = 'weak';
+
     signals.push({
       symbol: pair.symbol,
       label: pair.label,
       kind: pair.kind,
       base: pair.base,
       quote: pair.quote,
-      action: score > 0 ? 'BUY' : 'SELL',
+      // `action` is the fundamental direction. The plan, when present, is built
+      // on that same direction because the chart agreed with it.
+      action: fundAction,
+      fundAction,
+      techAction,
+      newsType: top.newsType || newsTypeOf(top.tag),
+      release: top.title,
+      analysis,
       direction: Math.sign(score),
       scoreBps: +score.toFixed(2),
       confidence,
       expectedMoveBps: +(absScore).toFixed(2),
       hasEdge,
+      fundOk,
+      techOk,
+      conflict,
       plan,
       tech,
       top,

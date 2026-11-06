@@ -75,6 +75,16 @@
                 <option value="10">10d</option>
               </select>
             </label>
+            <label>Analysis
+              <select id="analysis-filter">
+                <option value="all" selected>All</option>
+                <option value="signal">Tradeable (confluence + technical)</option>
+                <option value="confluence">Confluence only</option>
+                <option value="technical">Technical only</option>
+                <option value="fundamental">Fundamental only</option>
+                <option value="conflict">Conflicts</option>
+              </select>
+            </label>
             <label>Min surprise
               <select id="min-z">
                 <option value="1.5">1.5σ</option>
@@ -91,15 +101,35 @@
               </select>
             </label>
             <label class="toggle"><input type="checkbox" id="msnr-on" checked /><span>MSNR technicals</span></label>
-            <label>Stops
-              <select id="stop-profile">
-                <option value="tight">Tight</option>
-                <option value="balanced" selected>Balanced</option>
-                <option value="wide">Wide</option>
-              </select>
-            </label>
             <label class="toggle"><input type="checkbox" id="msnr-require" /><span>Chart must agree</span></label>
             <label class="toggle"><input type="checkbox" id="proven-only" /><span>Proven edge only</span></label>
+          </div>
+          <div class="controls">
+            <label>Stop (pips)
+              <select id="sl-pips">
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30" selected>30</option>
+                <option value="40">40</option>
+              </select>
+            </label>
+            <label>Target (pips)
+              <select id="tp-pips">
+                <option value="30">30</option>
+                <option value="50">50</option>
+                <option value="70" selected>70</option>
+                <option value="100">100</option>
+                <option value="150">150</option>
+              </select>
+            </label>
+            <label>Stop sizing
+              <select id="sl-atr">
+                <option value="0.3">0.3× ATR (tight)</option>
+                <option value="0.4" selected>0.4× ATR</option>
+                <option value="0.5">0.5× ATR</option>
+                <option value="0.75">0.75× ATR (roomy)</option>
+              </select>
+            </label>
           </div>
           <div id="signals" class="signals"></div>
         </div>
@@ -182,9 +212,74 @@
           <span class="chev" aria-hidden="true"></span>
         </summary>
         <div class="body">
+          <div class="controls">
+            <label>Objective
+              <select id="msnr-goal">
+                <option value="winrate" selected>Highest win rate</option>
+                <option value="balanced">Best risk-adjusted (30/70)</option>
+              </select>
+            </label>
+            <label>Scope
+              <select id="msnr-scope">
+                <option value="fx" selected>FX only</option>
+                <option value="all">All instruments</option>
+              </select>
+            </label>
+          </div>
           <p class="note" id="msnr-note"></p>
           <div class="stat-strip" id="msnr-stats"></div>
           <div class="scroller" id="msnr-year"></div>
+        </div>
+      </details>
+
+      <!-- Strategy comparison -->
+      <details class="panel" open>
+        <summary>
+          <span class="h">
+            <span class="t">Strategy comparison — measured win rate</span>
+            <span class="sub" id="strat-range">Every model on the same walk-forward test</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <p class="note" id="strat-note"></p>
+          <div class="scroller" id="strat-table"></div>
+          <p class="note" id="strat-verdict"></p>
+        </div>
+      </details>
+
+      <!-- Chart lab -->
+      <details class="panel">
+        <summary>
+          <span class="h">
+            <span class="t">Chart lab — price action</span>
+            <span class="sub" id="chart-range">Candles or line, with the levels the models read</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <div class="controls">
+            <label>Instrument
+              <select id="chart-symbol"></select>
+            </label>
+            <label>Style
+              <select id="chart-mode">
+                <option value="candles" selected>Candles</option>
+                <option value="line">Line</option>
+              </select>
+            </label>
+            <label>Bars
+              <select id="chart-bars">
+                <option value="80">80</option>
+                <option value="160" selected>160</option>
+                <option value="300">300</option>
+                <option value="600">600</option>
+              </select>
+            </label>
+          </div>
+          <div class="chips" id="chart-toggles"></div>
+          <canvas id="chart" class="chart" aria-label="price chart"></canvas>
+          <p class="note" id="chart-read"></p>
         </div>
       </details>
 

@@ -10,11 +10,15 @@
     "data:model": "node tools/build-model.mjs",
     "data:site": "node tools/build-site-data.mjs",
     "data:track": "node tools/build-track-record.mjs",
-    "build": "npm run data:model && npm run data:site && npm run data:track && npm run data:msnr",
+    "build": "npm run data:model && npm run data:site && npm run data:track && npm run data:msnr && npm run data:chart && npm run data:tnc && npm run data:apa && npm run data:fund",
     "backtest": "node tools/backtest-learned.mjs && node tools/backtest-fade.mjs",
     "dev": "node tools/dev-server.mjs 3000",
     "start": "node tools/dev-server.mjs 3000",
-    "data:msnr": "node tools/backtest-msnr.mjs"
+    "data:msnr": "node tools/backtest-msnr.mjs",
+    "data:chart": "node tools/build-chart-data.mjs",
+    "data:tnc": "node tools/backtest-tnc.mjs",
+    "data:apa": "node tools/backtest-apa.mjs",
+    "data:fund": "node tools/backtest-fund.mjs"
   },
   "engines": {
     "node": ">=18"

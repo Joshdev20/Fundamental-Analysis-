@@ -59,6 +59,35 @@ export function classify(title, indicator = '') {
   return { polarity: 0, tag: 'unknown' };
 }
 
+// Human-readable news types. The tag says which family of releases a call came
+// from; a trader needs that spelled out, because "inflation" and "labour" carry
+// very different follow-through.
+export const NEWS_TYPES = {
+  inflation: 'Inflation (CPI · PPI · PCE)',
+  rates: 'Interest rate decision',
+  labour: 'Jobs / payrolls (NFP)',
+  wages: 'Wages / earnings',
+  unemployment: 'Unemployment rate',
+  claims: 'Jobless claims',
+  growth: 'GDP / growth',
+  consumption: 'Retail sales / spending',
+  activity: 'PMI / ISM activity',
+  sentiment: 'Confidence / sentiment',
+  housing: 'Housing / construction',
+  trade: 'Trade balance',
+  investment: 'Investment / capex',
+  liquidity: 'Money supply / credit',
+  fiscal: 'Fiscal / budget',
+  nontrade: 'Not tradeable',
+  positioning: 'Positioning',
+  energy: 'Energy',
+  unknown: 'Other',
+};
+
+export function newsTypeOf(tag) {
+  return NEWS_TYPES[tag] || 'Other';
+}
+
 // Stable key used to group releases of the same series across history.
 export function indicatorKey(event) {
   const base = (event.indicator || event.title || '').toLowerCase().trim();

@@ -223,3 +223,54 @@ rates stay out-of-sample as the history grows.
   limited to recent years; the daily model uses the full 2014→ history.
 - Signals assume you can trade near the release price; slippage on fast markets
   can be worse than the 2 bp modelled.
+
+## Models on the platform
+
+Every model is scored the same way: walk-forward, resolved trades only (a trade
+counts once it reaches its target or its stop; trades still open at the horizon
+are marked to market and kept out of the hit rate). Source of each number is the
+matching `tools/backtest-*.mjs`, and the app only ever displays what those
+produced.
+
+| Model | What it needs | Calls | Win rate | PF | Expectancy |
+|---|---|---|---|---|---|
+| Fundamentals + chart, category filter | big surprise **and** the chart agrees **and** the news type has a proven prior record | 176 | **64.6%** | 1.83 | +0.291R |
+| Fundamentals + chart, no filter | big surprise and the chart agrees | 408 | 56.0% | 1.28 | +0.121R |
+| APA `trend+fvg`, 1:0.5 target | structure + imbalance, tiny target | 10,150 | 64.5% | 0.87 | −0.046R |
+| TNC key levels, short side | A-shaped level or bearish OCL, 1:1 | 35,199 | 52.1% | 1.08 | +0.04R |
+| TNC key levels, long side | V-shaped level or bullish OCL, 1:1 | 40,867 | 44.4% | 0.80 | −0.11R |
+
+**The honest headline.** Nothing on this data reaches 70% at a 1:3 reward:risk —
+that combination does not exist here. A high hit rate needs a target close to the
+stop: the APA row hits 64.5% on a 1:0.5 target but its expectancy is negative, so
+it loses money. The best balance of win rate and profitability is the fundamental
+model with a news-type filter, at 64.6% with a positive expectancy. The
+fundamental model is what the platform leads with.
+
+### Which news type each call came from
+
+Fundamental calls are labelled with the news type, because the families behave
+differently:
+
+- **Inflation (CPI · PPI · PCE)** — a hot print is hawkish and strengthens the currency
+- **Interest rate decision** — hawkish surprise strengthens the currency
+- **Jobs / payrolls (NFP)** — stronger is bullish
+- **Wages / earnings** — stronger is bullish
+- **Unemployment rate** — *inverse*: higher is bearish
+- **Jobless claims** — *inverse*: higher is bearish
+- **GDP / growth, Retail sales, PMI / ISM, Confidence** — stronger is bullish
+
+Each call shows the news type and the exact release (for example "PPI MoM"),
+the surprise in sigmas (z), the learned edge in basis points, and the sample
+size behind it.
+
+### Models
+
+- `public/lib/engine.mjs` — fundamentals first: turns a release into a direction,
+  then splits the fundamental call from the technical call.
+- `public/lib/tnc.mjs` — the trader's MSNR key-level ladder: rejection → break of
+  structure → entry, with A/V-shaped levels, OCLs, and head-and-shoulders.
+- `public/lib/apa.mjs` — Advanced Price Action: structure, liquidity sweep,
+  imbalance, break of structure.
+- `public/lib/chart.mjs` — dependency-free canvas chart (candles or line) that
+  draws the levels the models read.

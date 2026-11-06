@@ -233,6 +233,152 @@ export function confluence(bars, at, dir, { zones, fvgs, atr, highs, lows } = {}
 }
 
 // ---------------------------------------------------------------------------
+// Fibonacci
+// ---------------------------------------------------------------------------
+
+// The most recent impulse leg in the trade's direction: for a buy, the last
+// swing low and the highest high since it. Returns the leg plus its retracement
+// and extension levels. Only swings known at `at` are used.
+export function fibLeg(bars, at, dir, { swingN = 2 } = {}) {
+  const highs = swingHighs(bars.slice(0, at + 1), swingN).filter((s) => s.knownAt <= at);
+  const lows = swingLows(bars.slice(0, at + 1), swingN).filter((s) => s.knownAt <= at);
+  if (!highs.length || !lows.length) return null;
+
+  if (dir > 0) {
+    const low = lows.at(-1);
+    const after = highs.filter((s) => s.idx > low.idx);
+    if (!after.length) return null;
+    const high = after.reduce((a, b) => (b.price > a.price ? b : a));
+    const leg = high.price - low.price;
+    if (leg <= 0) return null;
+    return { dir, lo: low.price, hi: high.price, leg, retr: (f) => high.price - f * leg, ext: (f) => high.price + f * leg };
+  }
+  const high = highs.at(-1);
+  const after = lows.filter((s) => s.idx > high.idx);
+  if (!after.length) return null;
+  const low = after.reduce((a, b) => (b.price < a.price ? b : a));
+  const leg = high.price - low.price;
+  if (leg <= 0) return null;
+  return { dir, lo: low.price, hi: high.price, leg, retr: (f) => low.price + f * leg, ext: (f) => low.price - f * leg };
+}
+
+export const FIB_RETR = [0.382, 0.5, 0.618, 0.786];
+export const FIB_EXT = [1.272, 1.618, 2.0];
+
+// A Fibonacci trade plan built around limit orders.
+//
+// A buy limit waits *below* the market and a sell limit waits *above* it, so a
+// setup only qualifies when price is still on the far side of the entry level.
+// If price has already traded through the level the pullback is gone and the
+// trade is skipped rather than chased.
+//
+// Entry  = a retracement of the last impulse leg (default 0.618).
+// Stop   = just beyond a deeper retracement (default 0.786).
+// Target = a Fibonacci extension (default 1.618), floored at `minRR` x risk.
+export function fibPlan(bars, at, dir, ctx, { entryFib = 0.618, stopFib = 0.786, extFib = 1.618, profile = 'tight', minRR = 3, maxRiskPct = 3 } = {}) {
+  const a = ctx.atr || 0;
+  if (!a) return null;
+  if (stopFib <= entryFib) return null; // stop must be deeper than the entry
+  const leg = fibLeg(bars, at, dir);
+  if (!leg) return null;
+  const price = bars[at].c;
+
+  const entry = leg.retr(entryFib);
+  // Limit-order semantics: the level must still be ahead of the market.
+  if (dir > 0 && !(entry < price)) return null;
+  if (dir < 0 && !(entry > price)) return null;
+
+  const buffer = 0.15 * a;
+  const structural = leg.retr(stopFib);
+  let stop = dir > 0 ? structural - buffer : structural + buffer;
+  const maxDist = (profile === 'tight' ? 1.0 : profile === 'wide' ? 2.5 : 1.5) * a;
+  const dist = Math.abs(entry - stop);
+  if (dist > maxDist) stop = dir > 0 ? entry - maxDist : entry + maxDist;
+
+  const risk = Math.abs(entry - stop);
+  if (!risk || (risk / entry) * 100 > maxRiskPct) return null;
+
+  let take = leg.ext(extFib);
+  if (dir > 0 && take <= entry + minRR * risk) take = entry + minRR * risk;
+  if (dir < 0 && take >= entry - minRR * risk) take = entry - minRR * risk;
+
+  return {
+    entry: round(entry), stop: round(stop), take: round(take),
+    risk: round(risk), reward: round(Math.abs(take - entry)),
+    rr: +((Math.abs(take - entry)) / risk).toFixed(2),
+    riskPct: +((risk / entry) * 100).toFixed(2),
+    kind: 'fib',
+    order: dir > 0 ? 'BUY LIMIT' : 'SELL LIMIT',
+    fib: { entry: entryFib, stop: stopFib, extension: extFib, leg: round(leg.leg) },
+  };
+}
+
+// Resolve a plan that is entered with a limit order. Waits up to `limitWindow`
+// bars for the level to trade, then resolves against stop/target. Returns null
+// if the limit was never filled.
+export function resolveLimit(bars, at, dir, plan, { limitWindow = 3, horizon = 3 } = {}) {
+  const isLimit = dir > 0 ? plan.entry < bars[at].c : plan.entry > bars[at].c;
+  let fill = at;
+  if (isLimit) {
+    let found = -1;
+    for (let i = at + 1; i <= Math.min(at + limitWindow, bars.length - 1); i++) {
+      const b = bars[i];
+      if (dir > 0 ? b.l <= plan.entry : b.h >= plan.entry) { found = i; break; }
+    }
+    if (found < 0) return null; // never filled
+    fill = found;
+  }
+  const out = resolvePlan(bars, fill, dir, plan, horizon);
+  return { ...out, fill, waited: fill - at };
+}
+
+// ---------------------------------------------------------------------------
+// Fixed pip plans (small-account friendly)
+// ---------------------------------------------------------------------------
+
+// Conventional pip sizes. Metals are quoted in dollars, so their pip is 0.1;
+// JPY crosses quote to two decimals, so theirs is 0.01; crypto counts whole
+// dollars.
+export function pipSize(symbol = '') {
+  const s = String(symbol).toUpperCase();
+  if (s.startsWith('XAU')) return 0.1;
+  if (s.startsWith('XAG')) return 0.01;
+  if (s.startsWith('BTC') || s.startsWith('ETH')) return 1;
+  if (s.includes('JPY')) return 0.01;
+  return 0.0001;
+}
+
+// A fixed-distance plan. Distances are in pips, but the stop is first scaled to
+// the instrument's own volatility (`slAtr` x ATR) and then clamped between
+// `slPips` and `maxSlPips`. A flat pip stop cannot be shared across markets:
+// 30 pips is a sane stop on EUR/USD (0.4 ATR) and instant noise-death on gold
+// (0.12 ATR). Scaling by ATR keeps the risk comparable, and the pip numbers stay
+// readable. Entry is the bar close (market order).
+export function pipPlan(bars, at, dir, ctx, { symbol = '', slPips = 30, tpPips = 70, slAtr = 0.5, minRR = 2.3, maxRiskPct = 3, maxSlPips = 250 } = {}) {
+  const pip = pipSize(symbol);
+  const price = bars[at].c;
+  if (!(price > 0)) return null;
+  const a = ctx.atr || 0;
+  let sl = slPips;
+  if (a > 0 && slAtr > 0) sl = Math.round((slAtr * a) / pip);
+  sl = Math.max(slPips, Math.min(maxSlPips, sl));
+  const risk = sl * pip;
+  let reward = Math.max(tpPips * pip, minRR * risk);
+  const entry = price;
+  const stop = dir > 0 ? entry - risk : entry + risk;
+  const take = dir > 0 ? entry + reward : entry - reward;
+  if (!(risk > 0) || (risk / entry) * 100 > maxRiskPct) return null;
+  return {
+    entry: round(entry), stop: round(stop), take: round(take),
+    risk: round(risk), reward: round(reward),
+    rr: +(reward / risk).toFixed(2),
+    riskPct: +((risk / entry) * 100).toFixed(2),
+    kind: 'pip',
+    pips: { sl, tp: Math.round(reward / pip) },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Trade plan: entry, tight stop, take profit
 // ---------------------------------------------------------------------------
 
@@ -241,7 +387,7 @@ export function confluence(bars, at, dir, { zones, fvgs, atr, highs, lows } = {}
 // zone distance but never lets risk exceed `maxAtrStop` — that is the profile
 // that keeps stops small enough for a small account without losing the edge.
 export const STOP_PROFILES = {
-  tight: { mode: 'clamp', maxAtrStop: 1.0 },
+  tight: { mode: 'atr', maxAtrStop: 1.0 },
   balanced: { mode: 'clamp', maxAtrStop: 1.5 },
   wide: { mode: 'clamp', maxAtrStop: 2.5 },
 };
@@ -294,18 +440,23 @@ export function planTrade(bars, at, dir, ctx, { rr = 2, bufferAtr = 0.15, minR =
   };
 }
 
-// Did a plan win, lose, or neither within `horizon` bars, checking each bar's
-// range against stop and target? Assumes worst case when both are hit in one
-// bar (stop first) — the conservative reading.
+// Resolve a plan bar by bar. Stop is checked before target, which is the
+// conservative assumption when a single bar spans both.
+//
+// `outcome` is 'take', 'stop' or 'open'. An open trade never reached either
+// level, so it is marked to market at the horizon close and its `r` is the
+// floating multiple actually earned — it is NOT a win. Treating an unresolved
+// trade as a full-R win is how a backtest lies to you.
 export function resolvePlan(bars, at, dir, plan, horizon) {
   for (let i = at + 1; i <= Math.min(at + horizon, bars.length - 1); i++) {
     const b = bars[i];
     const hitStop = dir > 0 ? b.l <= plan.stop : b.h >= plan.stop;
     const hitTake = dir > 0 ? b.h >= plan.take : b.l <= plan.take;
-    if (hitStop) return { won: -1, bars: i - at, price: plan.stop };
-    if (hitTake) return { won: 1, bars: i - at, price: plan.take };
+    if (hitStop) return { outcome: 'stop', won: -1, r: -1, bars: i - at, price: plan.stop };
+    if (hitTake) return { outcome: 'take', won: 1, r: plan.rr, bars: i - at, price: plan.take };
   }
   const last = bars[Math.min(at + horizon, bars.length - 1)].c;
-  const won = dir > 0 ? (last > plan.entry ? 1 : last < plan.entry ? -1 : 0) : (last < plan.entry ? 1 : last > plan.entry ? -1 : 0);
-  return { won, bars: horizon, price: last, open: true };
+  const move = dir > 0 ? last - plan.entry : plan.entry - last;
+  const r = plan.risk > 0 ? +(move / plan.risk).toFixed(3) : 0;
+  return { outcome: 'open', won: 0, r, bars: horizon, price: last, open: true };
 }
