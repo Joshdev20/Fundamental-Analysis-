@@ -180,10 +180,14 @@ function renderUpcoming() {
     }
     const dp = (v) => (v >= 100 ? +v.toFixed(2) : v >= 1 ? +v.toFixed(4) : +v.toFixed(5));
     const seenSym = new Set();
+    // No cap that can drop an instrument. A USD release touches at most nine
+    // pairs (the seven USD crosses plus gold and bitcoin); capping at six used to
+    // cut XAU/USD and BTC/USD, because every USD pair ties on contribution and
+    // the tie-break was arbitrary. The tie-break is now explicit.
     const orderRows = rowsFor
       .filter((x) => x.plan && !seenSym.has(x.symbol) && seenSym.add(x.symbol))
-      .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
-      .slice(0, 6)
+      .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution) || a.symbol.localeCompare(b.symbol))
+      .slice(0, 12)
       .map((x) => {
         const q = state.quotes[x.symbol];
         const now = q && q.price ? ` <span class="dim">now ${dp(q.price)}</span>` : '';
