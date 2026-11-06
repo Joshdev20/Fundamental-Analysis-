@@ -19,7 +19,12 @@
     "data:tnc": "node tools/backtest-tnc.mjs",
     "data:apa": "node tools/backtest-apa.mjs",
     "data:fund": "node tools/backtest-fund.mjs",
-    "check": "node tools/check-conventions.mjs"
+    "check": "node tools/check-conventions.mjs",
+    "experiment:direction": "node tools/experiment-direction.mjs",
+    "experiment:sweep": "node tools/experiment-sweep.mjs",
+    "experiment:validate": "node tools/experiment-validate.mjs",
+    "experiment:filters": "node tools/experiment-filters.mjs",
+    "experiment:combine": "node tools/experiment-combine.mjs"
   },
   "engines": {
     "node": ">=18"

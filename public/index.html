@@ -126,6 +126,7 @@
             </label>
             <label class="toggle"><input type="checkbox" id="msnr-on" checked /><span>MSNR technicals</span></label>
             <label class="toggle"><input type="checkbox" id="msnr-require" /><span>Chart must agree</span></label>
+            <label class="toggle"><input type="checkbox" id="trend-filter" checked /><span>Trend must agree</span></label>
             <label class="toggle"><input type="checkbox" id="proven-only" /><span>Proven edge only</span></label>
           </div>
           <div class="controls">
@@ -244,7 +245,7 @@
         </summary>
         <div class="body">
           <div class="controls">
-            <label>Objective
+            <label id="goal-label">Objective
               <select id="msnr-goal">
                 <option value="winrate" selected>Highest win rate</option>
                 <option value="balanced">Best risk-adjusted (30/70)</option>

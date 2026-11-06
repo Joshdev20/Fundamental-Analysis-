@@ -64,6 +64,10 @@ async function main() {
       horizonDays: 5,
       minScoreBps: 2,
       minZ: 2,
+      // Bars are passed so the ledger applies the same trend filter the live app
+      // does. Without them the replay would log calls the platform would never
+      // have shown, and the record would overstate the sample.
+      bars: daily,
     });
     for (const s of signals) {
       const pair = pairBySymbol[s.symbol];

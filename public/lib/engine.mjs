@@ -6,6 +6,7 @@
 
 import { classify, indicatorKey, newsTypeOf } from './polarity.mjs';
 import { PAIRS, pairDirection, bucketOf } from './pairs.mjs';
+import { WEAK_TAGS, trendBefore } from './accuracy.mjs';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -241,7 +242,7 @@ export function buildForecastSignals(events, model, { asOf = Date.now(), lookahe
   return signals;
 }
 
-export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3, horizonDays = 5, minScoreBps = 2, minZ = 2, requireEdge = false, bars = null, msnr = null, msnrOptions = {} } = {}) {
+export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3, horizonDays = 5, minScoreBps = 2, minZ = 2, requireEdge = false, bars = null, msnr = null, msnrOptions = {}, trendFilter = true } = {}) {
   const windowMs = windowDays * 86400000;
   const opts = { minConfluence: 4, horizon: 3, requireStructure: true, rr: 2, minR: 1.5, profile: 'balanced', requireTech: false, ...msnrOptions };
   const candidates = [];
@@ -269,8 +270,17 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
         instrument: pair.symbol,
       });
       if (!ev) continue;
+      // No measured edge in these release types (see accuracy.mjs), so they are
+      // not allowed to drive a call.
+      if (WEAK_TAGS.has(ev.tag)) continue;
       const dir = pairDirection(pair, event.currency, ev.currencyBullish);
       if (dir === 0) continue;
+      // Trend agreement. Skipped when no series is loaded, because the
+      // pre-release path has no bars and should still produce a prediction.
+      if (trendFilter && bars && bars[pair.symbol]) {
+        const t = trendBefore(bars[pair.symbol], event.ts);
+        if (t != null && t !== dir) continue;
+      }
       const contribution = dir * Math.abs(ev.contributionBps);
       score += contribution;
       drivers.push({ ...ev, direction: dir, contribution: +contribution.toFixed(2), newsType: newsTypeOf(ev.tag) });

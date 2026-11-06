@@ -87,19 +87,54 @@ shows a walk-forward-backtested confidence plus a scored ledger of every call.
   MSNR confluence >= 4 AND structure agrees. `planTrade` supports stop profiles
   `tight`/`balanced`/`wide` (clamped zone stops). Do not reintroduce fixed 5-day
   holds for these — the whole point is a defined, small stop.
-- Measured (`npm run data:msnr`, walk-forward, bar-by-bar, 2014–2026):
-  480 calls, **57.7% win, PF 3.14, avg risk 1.36% of price, 277 TP / 203 SL,
-  11/12 profitable years**. vs 53.8%/PF1.85 for fundamentals-only.
+- Measured (`npm run data:msnr`, walk-forward, bar-by-bar, 2014–2026), confirmation
+  stop, weak tags dropped, trend filter on, net of 2 bp:
+  416 calls, **69.4% win, PF 2.11, +0.341R per call, 11/12 profitable years**;
+  the FX-only slice is **74.2% / PF 2.64 / 12 of 12**. The old 0.25 ATR break
+  scored 61.2% — the entry threshold is now 0.10 ATR.
 - Honest limits: 2015 & 2016 lose; `trade`, `unemployment`, `activity` tags are
   thin. Higher confluence is monotonic (score>=4 -> 55%+, score>=5 -> 58% but
   tiny n), so do not lower the threshold to manufacture more calls.
 - Tighter stops cost win rate (0.5xATR -> 48%) — `balanced` (1.5xATR clamp) is
   the deliberate sweet spot, not an oversight.
 
+## Accuracy work (tools/experiment-*.mjs)
+
+The direction experiments are reproducible: `npm run experiment:direction`,
+`:sweep`, `:validate`, `:filters`, `:combine`. Every candidate had to pass a
+**split-half** test (positive expectancy in both 2014-2019 and 2020-2026) before
+shipping. Read the README section "What was tested and rejected" before redoing
+any of it — alternative direction estimators, a higher |z| gate, a higher
+confluence gate, session/currency subsets, and fading were all measured and all
+rejected.
+
+Shipped, in `public/lib/accuracy.mjs`:
+- **Trend agreement** (`trendBefore`): take a call only when the 50-day daily
+  trend points the same way. Largest gain after the entry threshold; robust across
+  every lookback from 20 to 200, which is why 50 is not a tuned parameter.
+- **Weak-tag exclusion** (`WEAK_TAGS`): unemployment and sentiment have no
+  measured edge. This is why call counts dropped across the board.
+
+Two traps found here, both worth remembering:
+- **Costs were declared but never charged.** `model.json` carried `costBps: 2`
+  while `backtest-msnr.mjs` reported gross numbers. Charge cost in **R units**,
+  not basis points — 2 bp is 0.075R on a 30-pip EUR/USD stop but 0.5R on gold's.
+- **Daily bars are stamped 00:00 UTC**, so the bar for the release's own date is
+  not finished when the release prints. Reading it is a look-ahead. Use
+  `trendBefore(bars, ts)`, never `trendAt(bars, barAtOrAfter(bars, ts))`.
+
+The displayed MSNR numbers must describe the plan the cards show. The order-type
+selector drives the goal (`confirmation`/`limit`/`winrate`); do not let the panel
+quote one entry's record while the cards show another.
+
 ## Accuracy ceiling (do not fight this)
 
-- ~70 % win rate on daily FX direction is **not achievable** and every attempt to
-  reach it in this repo produced noise-fitting. Measured facts, all walk-forward:
+- ~70 % win rate on **daily FX direction** is **not achievable** and every attempt
+  to reach it in this repo produced noise-fitting. The 69.4% above is a different
+  quantity: it is the share of *resolved trades* that hit a 1:1 target under a
+  confirmation-stop entry with a trend filter, not the hit rate of a direction
+  forecast. Do not quote it as a direction-accuracy claim. Measured facts, all
+  walk-forward:
   - |z| < 2: a coin flip (47–51 %). The engine therefore refuses to fire there
     (`minZ` in `buildSignals`, default 2).
   - |z| 2–3 at a 5-day hold: ~53–55 %. This is the real, repeatable edge.
@@ -120,3 +155,11 @@ Entering *before* a release is not tradeable and inflates win rates (60 %+). The
 honest, post-release edge is small and concentrates at |z| ≥ 2.5 and in specific
 event types (rate decisions, growth, unemployment fades). Do not "improve" the
 reported numbers by reintroducing pre-release entries.
+
+## Live vs replay must agree
+
+`buildSignals` is called from three places: the browser, `backtest-msnr.mjs`, and
+`build-track-record.mjs`. When adding a filter, wire it into all three. The
+track-record replay originally passed no bars, so it logged calls the live app
+would never have shown. Bars are now passed on every path; the MSNR overlay still
+needs `msnr` as well, so passing bars alone does not switch it on.

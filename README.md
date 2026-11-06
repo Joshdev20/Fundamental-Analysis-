@@ -234,9 +234,9 @@ produced.
 
 | Model | What it needs | Calls | Win rate | PF | Expectancy |
 |---|---|---|---|---|---|
-| Fundamentals + chart, **confirmation stop** | big surprise, chart agrees, entry waits for a 0.25 ATR break of the release bar | 620 | **61.2%** | 1.54 | +0.206R |
-| Fundamentals + chart, market entry | big surprise and the chart agrees, fill at the release-bar close | 832 | 54.0% | 1.18 | +0.078R |
-| Fundamentals + chart, **limit on the retest** | as above but the entry is a limit at the break level | 465 | 42.0% | 0.72 | −0.157R |
+| Fundamentals + chart, **confirmation stop** | big surprise, chart agrees, trend agrees, entry waits for a 0.10 ATR break of the release bar | 416 | **69.4%** | 2.11 | +0.341R |
+| Fundamentals + chart, market entry | big surprise, chart agrees, trend agrees, fill at the release-bar close | 499 | 60.0% | 1.39 | +0.159R |
+| Fundamentals + chart, **limit on the retest** | as above but the entry is a limit at the break level | 281 | 45.1% | 0.77 | −0.128R |
 | Fundamentals + chart, category filter | big surprise **and** the chart agrees **and** the news type has a proven prior record | 273 | 58.7% | 1.43 | +0.175R |
 | APA `trend+fvg`, 1:0.5 target | structure + imbalance, tiny target | 10,150 | 64.5% | 0.87 | −0.046R |
 | TNC key levels, short side | A-shaped level or bearish OCL, 1:1 | 35,199 | 52.1% | 1.08 | +0.04R |
@@ -261,9 +261,14 @@ surprise of roughly ±205k — which about 10% of NFP releases clear.
 ### How the entry is filled — and why it matters more than the filter
 
 The largest single improvement on the platform is not the model, it is *where the
-trade is filled*. Filling at the release-bar close scores 54.0%. Waiting for
-price to break that close by 0.25 ATR scores **61.2%**, and turns 11 of 12 years
-profitable against 7 of 12.
+trade is filled*. Filling at the release-bar close scores 60.0%. Waiting for
+price to break that close by 0.10 ATR scores **69.4%**, PF 2.11, and the FX-only
+slice runs 74.2% with 12 of 12 years profitable.
+
+The 0.10 ATR figure replaced the original 0.25 ATR. The threshold is monotone —
+every step from 0.5 down to 0.1 improved win rate and expectancy, in both halves
+of the sample — and it was chosen from that curve rather than by picking the best
+cell. `npm run experiment:sweep` reproduces it.
 
 The reason is that the release-bar close is usually the extreme of the spike. The
 post-release drift continues, so the break entry pays a fraction of an ATR more
@@ -277,6 +282,62 @@ defaults to a confirmation **stop** order, labelled as such on the card, and sho
 the live price next to the trigger so you can see whether the break has happened.
 
 Both entry styles are measured by `tools/backtest-msnr.mjs` (`npm run data:msnr`).
+
+### What was tested and rejected
+
+Accuracy work is only worth reporting if the failures are too. Everything below
+was measured on the same walk-forward gate, and everything below was **not**
+shipped because it did not survive the split-half test (positive expectancy in
+both 2014-2019 and 2020-2026).
+
+- **Every alternative direction estimator.** The beta is a regression slope; the
+  alternatives were a plain mean response, a signed mean, a beta shrunk toward
+  zero by sample count, and a vote between beta and the signed mean. None beat
+  the current beta (`npm run experiment:direction`). The current rule stays.
+- **A |z| gate above 3.** 62.5% win rate and PF 1.57 on n=227, but the sample is
+  thin and the first half contributes 28 trades. Not enough to justify the lost
+  volume.
+- **A confluence gate above 4.** Confluence 5 gives 55.3% on n=42; confluence 6
+  gives 37.5% on n=8. Both are noise. 4 stays.
+- **Trend lookback tuning.** 20, 30, 50, 100 and 200 all land between 67% and 69%
+  win rate. The filter is real; the parameter is not tuned, and 50 is used as a
+  round middle.
+- **The fade strategy.** Fading large surprises measured slightly *worse* than
+  following them (63.5% vs 63.5%, expectancy 0.228R vs 0.235R), so the app never
+  fades.
+- **Session and currency subsets.** The EU session scores 76.5% and GBP scores
+  73.7%, but both rest on 11-19 first-half trades. The EU effect is almost
+  entirely GBP inflation and growth; it is a small-sample artefact, not a filter.
+
+### The two filters that were shipped
+
+Both were added to `public/lib/accuracy.mjs` and are togglable in the UI.
+
+**Trend agreement.** Only take a fundamental call when the 50-day daily trend
+points the same way. This is the single largest accuracy gain after the entry
+threshold:
+
+| | Calls | Win | PF | Expectancy |
+|---|---|---|---|---|
+| Without | 644 | 65.2% | 1.78 | +0.271R |
+| With | 416 | **69.4%** | **2.11** | +0.341R |
+
+It costs about a third of the signal count, and it is worth it on every metric.
+The logic is that a bullish CPI print is worth buying in an uptrend and is a
+knife-fight in a downtrend; the release does not override the trend, it
+accelerates it.
+
+**Weak-tag exclusion.** Unemployment (51.2%, PF 1.01) and sentiment (36.4%, PF
+0.50) releases are dropped. Neither shows a directional edge, and trading them
+pays spread for nothing. This is also why the track record and the backtests now
+count fewer calls than before — the ones removed were not paying.
+
+### Costs
+
+Every headline number is **net of a 2 bp round trip**, charged in R units rather
+than basis points: 2 bp is 0.075R on a 30-pip EUR/USD stop but 0.5R on gold's, so
+a flat subtraction would flatter the FX rows and unfairly punish gold. At 8 bp the
+confirmation model still clears PF 1.31, so the edge is not a cost artefact.
 
 ### Pre-release predictions — what the consensus can and cannot say
 

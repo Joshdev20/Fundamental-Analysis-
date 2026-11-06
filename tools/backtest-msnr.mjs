@@ -20,11 +20,15 @@ import { barAtOrAfter } from '../lib/bars.mjs';
 import { attachZ } from '../lib/response.mjs';
 import { buildContext, alchemist } from '../public/lib/alchemist.mjs';
 import { resolvePlan, resolveConfirmation, resolveLimitEntry } from '../public/lib/msnr.mjs';
+import { WEAK_TAGS, trendBefore } from '../public/lib/accuracy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.resolve(__dirname, '..', 'data');
 const OUT = path.resolve(__dirname, '..', 'public', 'data');
 const HOLDS = [1, 2, 3, 5, 10];
+// Round-trip spread + slippage. Declared in model.json as costBps and charged
+// here, in R units, so the headline numbers are net rather than gross.
+const COST_BPS = 2;
 
 const GOALS = {
   winrate: { label: 'Max win rate', planStyle: 'pip', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5 },
@@ -32,11 +36,11 @@ const GOALS = {
   // Confirmation stop: wait for price to break the release bar by 0.25 ATR
   // before filling, rather than buying the close of the spike. Order is cancelled
   // if the break never comes.
-  confirmation: { label: 'Confirmation stop (0.25 ATR break, 1:1)', planStyle: 'confirm', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5, confirmAtr: 0.25, confirmWindow: 3 },
+  confirmation: { label: 'Confirmation stop (0.10 ATR break, 1:1)', planStyle: 'confirm', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5, confirmAtr: 0.10, confirmWindow: 3 },
   // Limit entry at the same break level, filled only on a retest. Offered as a
   // selectable order type; measured lower than the stop entry, and shown here so
   // the comparison is reproducible rather than asserted.
-  limit: { label: 'Limit on the retest (1:1)', planStyle: 'limit', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5, confirmAtr: 0.25, confirmWindow: 3, retestWindow: 3 },
+  limit: { label: 'Limit on the retest (1:1)', planStyle: 'limit', slPips: 30, tpPips: 30, slAtr: 0.75, minRR: 1, horizon: 5, confirmAtr: 0.10, confirmWindow: 3, retestWindow: 3 },
 };
 const GATE = { minConfluence: 4, requireStructure: true, minZ: 2 };
 
@@ -57,6 +61,9 @@ const cands = [];
 for (const e of withZ) {
   if (e.importance !== 1 || e.z == null || !e.currency) continue;
   if (Math.abs(e.z) < GATE.minZ) continue;
+  // Release types with no measured edge are excluded from every goal, so the
+  // comparison between goals is like-for-like.
+  if (WEAK_TAGS.has(e.tag)) continue;
   const y = new Date(e.ts).getUTCFullYear();
   const betas = betasByYear.get(y);
   for (const pair of pairsForCurrency(e.currency)) {
@@ -68,6 +75,8 @@ for (const e of withZ) {
     if (!b || !b.beta) continue;
     const dir = pairDirection(pair, e.currency, b.beta * e.z > 0);
     if (!dir) continue;
+    // Only take the call when the trend agreed as of the last completed bar.
+    if (trendBefore(bars, e.ts) !== dir) continue;
     cands.push({ y, tag: e.tag, symbol: pair.symbol, ei, dir, bars });
   }
 }
@@ -107,9 +116,14 @@ function backtest(goal, filter) {
         : resolvePlan(c.bars, c.ei, c.dir, res.plan, goal.horizon);
     if (out.outcome === 'cancelled') { cancelled++; continue; }
     if (out.outcome === 'unfilled') { unfilled++; continue; }
+    // Charge the round trip in R units: cost as a fraction of price, over the
+    // trade's risk. A flat 2bp is 0.075R on a 30-pip EUR/USD stop but 0.5R on
+    // gold's, so a flat subtraction would overstate gold's cost.
+    const entryPx = res.plan.entry;
+    const costR = res.plan.risk > 0 ? (COST_BPS / 10000) * entryPx / res.plan.risk : 0;
     trades.push({
       y: c.y, tag: c.tag, symbol: c.symbol,
-      r: out.r, outcome: out.outcome,
+      r: out.r - costR, outcome: out.outcome,
       riskPct: res.plan.riskPct,
       pips: out.outcome === 'take' ? res.plan.pips.tp : out.outcome === 'stop' ? -res.plan.pips.sl : 0,
       score: res.score, plan: res.plan,
@@ -141,7 +155,7 @@ const out = {
   gate: GATE,
   goals: {},
   range: { from: years[0], to: years.at(-1) },
-  note: 'Win rate counts resolved trades (target or stop hit). Unresolved trades are marked to market and never counted as wins.',
+  note: 'Win rate counts resolved trades (target or stop hit). Unresolved trades are marked to market and never counted as wins. Returns are net of a 2bp round-trip cost, charged in R units. Weak-tag releases are excluded and every call must agree with the 50-day daily trend.',
 };
 for (const [key, goal] of Object.entries(GOALS)) {
   out.goals[key] = { label: goal.label, config: goal, all: backtest(goal), fx: backtest(goal, fxOnly) };

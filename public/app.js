@@ -25,7 +25,7 @@ const state = {
   forecastLookahead: 7,
   forecastSignals: [],
   entryStyle: 'confirm',
-  confirmAtr: 0.25,
+  confirmAtr: 0.1,
   confirmWindow: 3,
   msnr: { plan: msnrPlan },
   msnrOn: true,
@@ -38,7 +38,7 @@ const state = {
   chartShow: { levels: true, ocls: true, zones: true, fvgs: true, marks: true },
   msnrScope: 'fx',
   analysisFilter: 'signal',
-  pip: { slPips: 30, tpPips: 30, slAtr: 0.75, confirmAtr: 0.25, confirmWindow: 3 },
+  pip: { slPips: 30, tpPips: 30, slAtr: 0.75, confirmAtr: 0.1, confirmWindow: 3 },
   backtest: null,
   track: null,
   msnrBacktest: null,
@@ -49,6 +49,7 @@ const state = {
   minZ: 2,
   minScoreBps: 2,
   requireEdge: false,
+  trendFilter: true,
   trackFilter: 'all',
   trackInstrument: 'all',
   page: 1,
@@ -554,7 +555,18 @@ function renderAll() {
 function renderMsnr() {
   const m = state.msnrBacktest;
   if (!m || !m.goals) return;
-  const goal = m.goals[state.msnrGoal] || m.goals.winrate || m.goals.balanced;
+  // The numbers must describe the plan the cards actually show. The order type
+  // selects the entry, so it selects the goal too: the confirmation stop and the
+  // limit are measured on their own; market entry uses the selected goal row.
+  const goalKey = state.entryStyle === 'confirm' ? 'confirmation'
+    : state.entryStyle === 'limit' ? 'limit'
+    : state.msnrGoal;
+  const goal = m.goals[goalKey] || m.goals.winrate || m.goals.balanced;
+  // The objective selector only changes the market-entry row; the stop and limit
+  // entries are each measured on their own, so hide the selector for them rather
+  // than leave a control that does nothing.
+  const goalLabel = $('#goal-label');
+  if (goalLabel) goalLabel.style.display = (state.entryStyle === 'pip') ? '' : 'none';
   const scope = state.msnrScope === 'fx' ? goal.fx : goal.all;
   const o = scope.overall;
   const stat = (k, v, s = '', cls = '') => `<div class="stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div><div class="m">${s}</div></div>`;
@@ -567,7 +579,7 @@ function renderMsnr() {
     stat('Profitable years', `${scope.profitableYears}/${scope.yearsWithData}`, 'of years with data'),
   ].join('');
   const cfg = goal.config;
-  $('#msnr-note').innerHTML = `A call must clear <b>|z| ≥ ${m.gate.minZ}</b> and the chart must agree at MSNR confluence ≥ ${m.gate.minConfluence}. The stop is the smaller of <b>${cfg.slAtr}× ATR</b> and the pip cap, floored at <b>${cfg.slPips} pips</b>; the target is at least <b>${cfg.tpPips} pips</b> and at least <b>${cfg.minRR}:1</b>. Resolved bar by bar over a ${cfg.horizon}-day hold. An unresolved trade is marked to market — it is never counted as a win.`;
+  $('#msnr-note').innerHTML = `A call must clear <b>|z| ≥ ${m.gate.minZ}</b>, the chart must agree at MSNR confluence ≥ ${m.gate.minConfluence}, and the <b>50-day trend must point the same way</b> as the call. Release types with no measured edge (unemployment, sentiment) are excluded. The stop is the smaller of <b>${cfg.slAtr}× ATR</b> and the pip cap, floored at <b>${cfg.slPips} pips</b>; the target is at least <b>${cfg.tpPips} pips</b> and at least <b>${cfg.minRR}:1</b>. Resolved bar by bar over a ${cfg.horizon}-day hold, <b>net of a 2 bp round trip</b>. An unresolved trade is marked to market — it is never counted as a win.`;
   $('#msnr-range').textContent = `${m.range.from}–${m.range.to} · walk-forward · ${o.n} calls · ${goal.label}`;
   const rows = Object.entries(scope.byYear).map(([y, v]) => {
     const cls = v.profitFactor > 1 ? 'up' : 'down';
@@ -755,6 +767,7 @@ function wire() {
   $('#proven-only').addEventListener('change', (e) => { state.requireEdge = e.target.checked; refreshSignals(); renderAll(); });
   $('#msnr-on').addEventListener('change', (e) => { state.msnrOn = e.target.checked; refreshSignals(); renderAll(); });
   $('#msnr-require').addEventListener('change', (e) => { state.msnrRequire = e.target.checked; refreshSignals(); renderAll(); });
+  $('#trend-filter').addEventListener('change', (e) => { state.trendFilter = e.target.checked; refreshSignals(); renderAll(); });
   $('#stop-profile')?.addEventListener('change', (e) => { state.stopProfile = e.target.value; refreshSignals(); renderAll(); });
   $('#order-type')?.addEventListener('change', (e) => { state.entryStyle = e.target.value; refreshSignals(); renderAll(); });
   $('#sl-pips').addEventListener('change', (e) => { state.pip.slPips = +e.target.value; refreshSignals(); renderAll(); });
@@ -811,7 +824,12 @@ function refreshSignals() {
     minScoreBps: state.minScoreBps,
     minZ: state.minZ,
     requireEdge: state.requireEdge,
-    bars: state.msnrOn ? state.bars : null,
+    trendFilter: state.trendFilter,
+    // Bars are passed even when MSNR is off: the trend filter needs them, and
+    // leaving them out would silently drop the filter while the panel still
+    // quotes numbers measured with it. The MSNR overlay needs both bars and msnr,
+    // so passing bars alone does not switch it on.
+    bars: state.bars,
     msnr: state.msnrOn ? state.msnr : null,
     // These must mirror the confirmation goal in tools/backtest-msnr.mjs exactly,
     // or the card shows a plan the measured numbers never described. minRR in
