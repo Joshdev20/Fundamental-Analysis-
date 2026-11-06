@@ -1,0 +1,73 @@
+// Alchemist — the merge of the two books.
+//
+// Fundamentals say *what* should happen (a CPI beat lifts the dollar);
+// MSNR says *whether the chart agrees* and *where to place the trade*. A call
+// only survives when both are satisfied, and the technicals set the levels.
+//
+// The merge is deliberately conservative. Where the two disagree the trade is
+// skipped rather than averaged, because a fundamental call fighting the chart
+// is exactly the trade that produces a losing streak.
+
+import { atrSeries, swingHighs, swingLows, findZones, findFvgs, confluence, planTrade, structure, nearestZones } from './msnr.mjs';
+
+// Precompute the technical context for a whole series once, then reuse it per
+// bar. Zones/FVGs are recomputed on the window up to each bar so nothing later
+// leaks in.
+export function buildContext(bars, { lookback = 180, atrPeriod = 14 } = {}) {
+  const atr = atrSeries(bars, atrPeriod);
+  const zones = findZones(bars, atr);
+  const fvgs = findFvgs(bars, atr);
+  const highs = swingHighs(bars, 2);
+  const lows = swingLows(bars, 2);
+  return { atr, zones, fvgs, highs, lows, lookback };
+}
+
+// Context restricted to what is knowable at bar `at`.
+export function contextAt(bars, ctx, at) {
+  const from = Math.max(0, at - ctx.lookback);
+  const slice = bars.slice(from, at + 1);
+  const shift = (arr) => arr.filter((z) => z.knownAt <= at).map((z) => ({ ...z }));
+  return {
+    atr: ctx.atr.slice(from, at + 1),
+    zones: shift(ctx.zones),
+    fvgs: shift(ctx.fvgs),
+    highs: ctx.highs.filter((s) => s.knownAt <= at),
+    lows: ctx.lows.filter((s) => s.knownAt <= at),
+    bars: slice,
+    offset: from,
+  };
+}
+
+// Given a fundamental direction and the bar it lands on, decide whether the
+// technicals back it, and if so produce the plan.
+export function alchemist(bars, at, dir, ctx, { minConfluence = 2.5, horizon = 5, requireStructure = true, rr = 2, profile = 'balanced', minR = 1.5, bufferAtr = 0.15, maxRiskPct = 6 } = {}) {
+  const local = contextAt(bars, ctx, at);
+  const price = bars[at].c;
+  const conf = confluence(bars, at, dir, {
+    zones: local.zones,
+    fvgs: local.fvgs,
+    atr: ctx.atr,
+    highs: local.highs,
+    lows: local.lows,
+  });
+
+  const st = structure(bars, at);
+  const structureOk = !requireStructure || st === 'range' || (dir > 0 ? st === 'up' : st === 'down');
+
+  const plan = planTrade(bars, at, dir, { atr: conf.atr, demand: conf.demand, supply: conf.supply }, { rr, profile, minR, bufferAtr, maxRiskPct });
+
+  const ok = conf.score >= minConfluence && structureOk && plan != null;
+  return { ok, score: conf.score, factors: conf.factors, structure: st, structureOk, plan, atr: conf.atr, price };
+}
+
+export { confluence, planTrade, structure, nearestZones };
+
+// Browser-facing entry point: given a price series and a direction, return the
+// technical verdict and a trade plan as of the most recent bar. The context is
+// cached per series because building zones/FVGs is the expensive part.
+const ctxCache = new WeakMap();
+export function msnrPlan(series, dir, opts = {}) {
+  let ctx = ctxCache.get(series);
+  if (!ctx) { ctx = buildContext(series); ctxCache.set(series, ctx); }
+  return alchemist(series, series.length - 1, dir, ctx, opts);
+}

@@ -4,6 +4,7 @@
 // public/data/model.json          the prediction model artifact
 // public/data/events-recent.json  last N days of normalized events (fallback)
 // public/data/backtest.json       headline backtest summary for the UI
+// public/data/bars.json           recent daily OHLC per instrument (MSNR)
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -47,6 +48,24 @@ async function main() {
     learnedGrid: learned ? learned.grid : null,
   };
   await writeFile(path.join(OUT, 'backtest.json'), JSON.stringify(summary));
+
+  // Recent daily OHLC per instrument so the browser can run MSNR live. 260
+  // bars (~1 year) is enough for zone/structure/FVG context at a small size.
+  const barsOut = {};
+  let barsCount = 0;
+  const { readdir } = await import('node:fs/promises');
+  const priceDir = path.join(DATA, 'prices');
+  let files = [];
+  try { files = await readdir(priceDir); } catch {}
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    const d = JSON.parse(await readFile(path.join(priceDir, f), 'utf8'));
+    const rows = d.rows.slice(-260).map((r) => ({ t: r.t, o: r.o, h: r.h, l: r.l, c: r.c }));
+    barsOut[d.symbol] = rows;
+    barsCount += rows.length;
+  }
+  await writeFile(path.join(OUT, 'bars.json'), JSON.stringify(barsOut));
+  console.log(`bars.json ${Object.keys(barsOut).length} instruments, ${barsCount} bars, ${(JSON.stringify(barsOut).length / 1024).toFixed(0)}KB`);
 
   console.log(`model.json ${(JSON.stringify(model).length / 1024).toFixed(0)}KB`);
   console.log(`events-recent.json ${recent.length} events, ${(JSON.stringify(recent).length / 1024).toFixed(0)}KB`);

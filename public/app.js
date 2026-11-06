@@ -1,4 +1,5 @@
 import { buildSignals, zOf } from './lib/engine.mjs';
+import { msnrPlan } from './lib/alchemist.mjs';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -10,8 +11,13 @@ const PAGE = 20;
 const state = {
   model: null,
   events: [],
+  bars: {},
+  msnr: { plan: msnrPlan },
+  msnrOn: true,
+  msnrRequire: false,
   backtest: null,
   track: null,
+  msnrBacktest: null,
   signals: [],
   asOf: Date.now(),
   windowDays: 30,
@@ -94,6 +100,28 @@ function renderSignals() {
     const cls = x.action === 'BUY' ? 'buy' : 'sell';
     const badge = x.hasEdge ? `<span class="badge edge">proven edge</span>` : `<span class="badge soft">unproven</span>`;
     const kind = x.kind && x.kind !== 'fx' ? `<span class="kind">${esc(x.kind)}</span>` : '';
+
+    let techBlock = '';
+    if (x.tech) {
+      const t = x.tech;
+      const chips = t.factors.map((f) => `<span class="chip" title="${esc(f.detail || '')}">${esc(f.name)}</span>`).join('');
+      techBlock = `<div class="sig-row"><span class="lbl">MSNR</span><span class="sig-meta">${t.score} · ${esc(t.structure)}</span></div>
+        <div class="chips">${chips || '<span class="chip muted">no confluence</span>'}</div>`;
+    }
+
+    let planBlock = '';
+    if (x.plan) {
+      const p = x.plan;
+      const dp = (v) => (v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(4) : v.toFixed(5));
+      planBlock = `<div class="plan">
+        <div class="plan-cell"><span class="lbl">Entry</span><b>${dp(p.entry)}</b></div>
+        <div class="plan-cell stop"><span class="lbl">Stop</span><b>${dp(p.stop)}</b></div>
+        <div class="plan-cell take"><span class="lbl">Target</span><b>${dp(p.take)}</b></div>
+        <div class="plan-cell"><span class="lbl">R:R</span><b>${p.rr.toFixed(1)}</b></div>
+      </div>
+      <div class="sig-row"><span class="lbl">Risk</span><span class="sig-meta">${p.riskPct}% of price · ${x.plan.rr >= 1 ? 'R:R ' + p.rr.toFixed(1) : ''}</span></div>`;
+    }
+
     return `<article class="sig ${cls}">
       <div class="sig-head">
         <span class="sig-pair">${esc(x.label)}${kind}</span>
@@ -102,6 +130,8 @@ function renderSignals() {
       <div class="sig-row"><span class="lbl">Confidence</span><span class="sig-meta">${x.confidence}%</span></div>
       <div class="meter" role="img" aria-label="confidence ${x.confidence}%"><i style="width:${pct}%"></i></div>
       <div class="sig-row"><span class="lbl">Expected move</span><span class="sig-meta">${fmtBps(x.scoreBps)}</span></div>
+      ${techBlock}
+      ${planBlock}
       <div class="sig-foot">
         <span>${badge}</span>
         <span>${esc(x.top?.tag || '')} · z ${x.top ? x.top.z.toFixed(1) : '—'} · n ${fmtNum(x.top?.hitSample)}</span>
@@ -234,6 +264,30 @@ function renderAll() {
   renderLedger();
   renderCalendar();
   renderBacktest();
+  renderMsnr();
+}
+
+function renderMsnr() {
+  const m = state.msnrBacktest;
+  if (!m) return;
+  const o = m.overall;
+  const stat = (k, v, s = '', cls = '') => `<div class="stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div><div class="m">${s}</div></div>`;
+  $('#msnr-stats').innerHTML = [
+    stat('Win rate', `${o.winRate}%`, `${o.n} chart-confirmed calls`, o.winRate > 50 ? 'up' : ''),
+    stat('Profit factor', o.profitFactor, `${o.tp} hit target · ${o.sl} stopped`),
+    stat('Avg risk', `${o.avgRiskPct}%`, 'of price, per call'),
+    stat('Reward:risk', o.avgRR.toFixed(2), 'planned per call'),
+    stat('Profitable years', `${m.profitableYears}/${m.yearsWithData}`, 'of years with data'),
+  ].join('');
+  $('#msnr-note').innerHTML = `A call must clear <b>|z| ≥ ${m.config.minZ}</b> <i>and</i> agree with MSNR structure (a fresh supply/demand zone, an imbalance, or a liquidity sweep) at confluence ≥ ${m.config.minConfluence}. Stops sit just beyond the zone, clamped so risk stays near ${o.avgRiskPct}% of price; the target is the opposing zone or ${m.config.rr}R. Resolved bar by bar over a ${m.config.horizon}-day hold — the same walk-forward discipline as the rest of the app.`;
+  $('#msnr-range').textContent = `${m.range.from}–${m.range.to} · walk-forward · ${o.n} calls`;
+  const rows = Object.entries(m.byYear).map(([y, v]) => {
+    const cls = v.profitFactor > 1 ? 'up' : 'down';
+    return `<tr><td>${y}</td><td class="num"><span class="pill ${cls}">${v.winRate}%</span></td><td class="num">${v.profitFactor}</td><td class="num">${v.n}</td><td class="num">${v.avgRiskPct}%</td></tr>`;
+  }).join('');
+  $('#msnr-year').innerHTML = `<table>
+    <thead><tr><th>Year</th><th class="num">Win rate</th><th class="num">PF</th><th class="num">Calls</th><th class="num">Avg risk</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
 }
 
 /* ---------------- wiring ---------------- */
@@ -243,6 +297,9 @@ function wire() {
   $('#min-z').addEventListener('change', (e) => { state.minZ = +e.target.value; refreshSignals(); renderAll(); });
   $('#min-score').addEventListener('change', (e) => { state.minScoreBps = +e.target.value; refreshSignals(); renderAll(); });
   $('#proven-only').addEventListener('change', (e) => { state.requireEdge = e.target.checked; refreshSignals(); renderAll(); });
+  $('#msnr-on').addEventListener('change', (e) => { state.msnrOn = e.target.checked; refreshSignals(); renderAll(); });
+  $('#msnr-require').addEventListener('change', (e) => { state.msnrRequire = e.target.checked; refreshSignals(); renderAll(); });
+  $('#stop-profile').addEventListener('change', (e) => { state.stopProfile = e.target.value; refreshSignals(); renderAll(); });
   $('#only-high').addEventListener('change', renderCalendar);
 
   $('#track-filter').addEventListener('click', (e) => {
@@ -279,21 +336,28 @@ function refreshSignals() {
     minScoreBps: state.minScoreBps,
     minZ: state.minZ,
     requireEdge: state.requireEdge,
+    bars: state.msnrOn ? state.bars : null,
+    msnr: state.msnrOn ? state.msnr : null,
+    msnrOptions: { minConfluence: 4, horizon: 3, requireStructure: true, rr: 2, profile: state.stopProfile || 'balanced', requireTech: state.msnrRequire },
   });
 }
 
 async function boot() {
   try {
-    const [model, events, backtest, track] = await Promise.all([
+    const [model, events, backtest, track, bars, msnrBacktest] = await Promise.all([
       getJSON('./data/model.json'),
       getJSON('./data/events-recent.json'),
       getJSON('./data/backtest.json'),
       getJSON('./data/track-record.json'),
+      getJSON('./data/bars.json').catch(() => ({})),
+      getJSON('./data/msnr-backtest.json').catch(() => null),
     ]);
     state.model = model;
     state.events = events;
     state.backtest = backtest;
     state.track = track;
+    state.bars = bars || {};
+    state.msnrBacktest = msnrBacktest;
     refreshSignals();
     fillInstrumentFilter();
     wire();

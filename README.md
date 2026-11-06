@@ -33,7 +33,14 @@ CORS-restricted data — deployable to Vercel with zero configuration.
 5. **Gates on conviction.** A release only becomes a candidate at |z| ≥ 2, where
    the edge begins, and it is followed or faded depending on how large the
    surprise is — the backtest decides which. Small surprises never fire.
-6. **Reports an honest confidence**, shrunk toward a coin flip when the sample is
+6. **Checks the chart — MSNR.** Every fundamental call is then confirmed against
+   Malaysian Support & Resistance: fresh supply/demand zones, fair-value gaps,
+   market structure and liquidity sweeps. A call that fights the chart is
+   dropped.
+7. **Sets the trade.** The signal carries an entry, a tight stop just beyond the
+   zone, and a take-profit at the opposing zone or a fixed reward:risk. Stops are
+   clamped so risk stays near 1–2% of price — small enough for a small account.
+8. **Reports an honest confidence**, shrunk toward a coin flip when the sample is
    thin, anchored to the measured walk-forward win rate of the matching bucket,
    and flags whether the signal has a *proven edge*.
 7. **Keeps a ledger.** Every call is logged the day it is made and resolved
@@ -82,6 +89,45 @@ proven-edge subset, and the misses are listed alongside the wins. Anyone quoting
 
 > Backtests are not a guarantee of future results. This is not financial advice.
 
+## Alchemist — fundamentals backed by MSNR
+
+Fundamentals say *what* should move. MSNR says *whether the chart agrees* and
+*where to put the trade*. The merge — the "Alchemist" step — only lets a call
+through when both line up, and it produces entry, stop and target.
+
+What MSNR checks on each call:
+
+- **Supply / demand zones** (base + impulse), with **freshness** — the first
+  retest of a fresh zone is the high-probability reaction; a third tap is spent.
+- **Imbalances / fair-value gaps** — three-candle voids price tends to revisit.
+- **Market structure** — higher highs and lows, lower highs and lows, or range.
+- **Liquidity sweeps** — a wick through a prior swing that closes back, i.e. a
+  stop hunt before the real move.
+- **Room to run** — the opposing zone must be far enough away to pay.
+
+**Backtested, walk-forward, resolved bar by bar** (`npm run data:msnr`):
+
+| | Fundamentals only | **+ MSNR (Alchemist)** |
+|---|---|---|
+| Calls | 143 | 480 |
+| Win rate | 53.8% | **57.7%** |
+| Profit factor | 1.85 | **3.14** |
+| Avg risk / call | fixed 5-day hold | **1.36% of price** |
+| Resolved | 5-day close | **277 hit target, 203 stopped** |
+| Profitable years | — | **11 of 12** |
+
+Adding the chart filter lifts the win rate several points and, more importantly,
+turns an open-ended directional bet into a defined trade: a stop you can size, a
+target you can bank, and a profit factor above 3. The stop matters for small
+accounts — average risk is **1.36% of price**, so a 1%-of-account risk rule
+implies a position a retail account can actually take.
+
+Where it does not work, said plainly: 2015 and 2016 were losing years, and the
+edge is thin on `trade`, `unemployment` and `activity` events. Those are shown
+with their real numbers rather than hidden.
+
+> Still not a 70% crystal ball, and still not financial advice.
+
 ## Architecture
 
 ```
@@ -91,7 +137,10 @@ public/                  static site (the whole frontend)
     pairs.mjs            pair universe + direction mapping
     polarity.mjs         event taxonomy / classification
     engine.mjs           live inference (z-score → signal)
-  data/                  model.json, events-recent.json, backtest.json, track-record.json
+    msnr.mjs             MSNR zones, FVGs, structure, sweeps, entry/SL/TP
+    alchemist.mjs        fundamentals x MSNR merge (the trade gate)
+  data/                  model.json, events-recent.json, backtest.json,
+                         track-record.json, bars.json, msnr-backtest.json
 api/proxy.js             serverless allowlisted proxy (CORS)
 lib/                     Node-only tooling modules
   data.mjs               TradingView / Yahoo / FRED fetchers
@@ -106,6 +155,7 @@ tools/                   data pipeline + backtests
   build-track-record.mjs replay the live engine day by day → track-record.json
   backtest-learned.mjs   walk-forward model evaluation
   backtest-fade.mjs      overreaction-fade characterisation
+  backtest-msnr.mjs      Alchemist walk-forward: entry/SL/TP win rate → msnr-backtest.json
 vercel.json              static hosting + cache headers
 ```
 

@@ -77,6 +77,25 @@ shows a walk-forward-backtested confidence plus a scored ledger of every call.
   only the first day of each run (same pair, same action, gap < window) so each
   move is logged once.
 
+## Alchemist / MSNR (fundamentals + technicals)
+
+- `public/lib/msnr.mjs` implements the MSNR (Malaysian Support & Resistance)
+  advanced theory: base+impulse supply/demand zones, freshness, fair-value gaps
+  (imbalance), market structure, liquidity sweeps, plus entry/stop/target plans.
+  All causal — a zone formed at bar i is only visible from bar i+1.
+- `public/lib/alchemist.mjs` is the merge: a fundamental call only survives if
+  MSNR confluence >= 4 AND structure agrees. `planTrade` supports stop profiles
+  `tight`/`balanced`/`wide` (clamped zone stops). Do not reintroduce fixed 5-day
+  holds for these — the whole point is a defined, small stop.
+- Measured (`npm run data:msnr`, walk-forward, bar-by-bar, 2014–2026):
+  480 calls, **57.7% win, PF 3.14, avg risk 1.36% of price, 277 TP / 203 SL,
+  11/12 profitable years**. vs 53.8%/PF1.85 for fundamentals-only.
+- Honest limits: 2015 & 2016 lose; `trade`, `unemployment`, `activity` tags are
+  thin. Higher confluence is monotonic (score>=4 -> 55%+, score>=5 -> 58% but
+  tiny n), so do not lower the threshold to manufacture more calls.
+- Tighter stops cost win rate (0.5xATR -> 48%) — `balanced` (1.5xATR clamp) is
+  the deliberate sweet spot, not an oversight.
+
 ## Accuracy ceiling (do not fight this)
 
 - ~70 % win rate on daily FX direction is **not achievable** and every attempt to

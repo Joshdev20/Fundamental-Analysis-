@@ -172,6 +172,18 @@ main { padding: clamp(18px, 3vw, 30px) 0 8px; }
 .badge.edge { color: var(--up); border-color: rgba(61, 220, 151, .4); background: rgba(61, 220, 151, .08); }
 .badge.soft { color: var(--warn); border-color: rgba(255, 200, 87, .35); }
 
+/* MSNR technicals on a signal card */
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.chip { font-size: 10px; letter-spacing: .02em; padding: 2px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2); text-transform: capitalize; }
+.chip.muted { color: var(--dim); }
+.plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 1px; margin-top: 10px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.plan-cell { display: flex; flex-direction: column; gap: 2px; padding: 6px 7px; background: var(--panel-2); min-width: 0; }
+.plan-cell .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+.plan-cell b { font-size: 11px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-cell.stop b { color: var(--down); }
+.plan-cell.take b { color: var(--up); }
+@media (max-width: 420px) { .plan { grid-template-columns: repeat(2, 1fr); } }
+
 /* ---------- ledger ---------- */
 .stat-strip { display: grid; gap: 10px; padding: 14px 0 6px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 .stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 11px 13px; }

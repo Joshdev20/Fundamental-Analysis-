@@ -121,8 +121,9 @@ export function eventPairDirection(event, pair, model, opts) {
  * events: array of normalized events (with actual values). Only events within
  * `windowDays` of `asOf` contribute.
  */
-export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3, horizonDays = 5, minScoreBps = 2, minZ = 2, requireEdge = false } = {}) {
+export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3, horizonDays = 5, minScoreBps = 2, minZ = 2, requireEdge = false, bars = null, msnr = null, msnrOptions = {} } = {}) {
   const windowMs = windowDays * 86400000;
+  const opts = { minConfluence: 4, horizon: 3, requireStructure: true, rr: 2, minR: 1.5, profile: 'balanced', requireTech: false, ...msnrOptions };
   const candidates = [];
   for (const e of events) {
     if (!Number.isFinite(e.ts) || e.ts > asOf || asOf - e.ts > windowMs) continue;
@@ -167,6 +168,22 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
 
     const confidence = confidenceOf(top.hitRate, top.hitSample);
 
+    // MSNR technical overlay. When bars are supplied the call must also be
+    // backed by the chart, and it carries an entry / stop / target plan.
+    let plan = null;
+    let tech = null;
+    if (bars && msnr) {
+      const series = bars[pair.symbol];
+      if (series && series.length > 60) {
+        const res = msnr.plan(series, Math.sign(score), opts);
+        tech = res ? { score: res.score, factors: res.factors, structure: res.structure } : null;
+        if (opts.requireTech && (!res || !res.ok)) continue;
+        plan = res && res.ok ? res.plan : null;
+      } else if (opts.requireTech) {
+        continue;
+      }
+    }
+
     signals.push({
       symbol: pair.symbol,
       label: pair.label,
@@ -179,6 +196,8 @@ export function buildSignals(events, model, { asOf = Date.now(), windowDays = 3,
       confidence,
       expectedMoveBps: +(absScore).toFixed(2),
       hasEdge,
+      plan,
+      tech,
       top,
       drivers,
     });

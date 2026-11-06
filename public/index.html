@@ -90,6 +90,15 @@
                 <option value="10">10 bp</option>
               </select>
             </label>
+            <label class="toggle"><input type="checkbox" id="msnr-on" checked /><span>MSNR technicals</span></label>
+            <label>Stops
+              <select id="stop-profile">
+                <option value="tight">Tight</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="wide">Wide</option>
+              </select>
+            </label>
+            <label class="toggle"><input type="checkbox" id="msnr-require" /><span>Chart must agree</span></label>
             <label class="toggle"><input type="checkbox" id="proven-only" /><span>Proven edge only</span></label>
           </div>
           <div id="signals" class="signals"></div>
@@ -160,6 +169,22 @@
         <div class="body">
           <p class="note" id="bt-note"></p>
           <div class="scroller" id="backtest"></div>
+        </div>
+      </details>
+
+      <!-- MSNR / Alchemist backtest -->
+      <details class="panel">
+        <summary>
+          <span class="h">
+            <span class="t">Alchemist — fundamentals + MSNR</span>
+            <span class="sub" id="msnr-range">Chart-confirmed calls with entry, stop and target</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </summary>
+        <div class="body">
+          <p class="note" id="msnr-note"></p>
+          <div class="stat-strip" id="msnr-stats"></div>
+          <div class="scroller" id="msnr-year"></div>
         </div>
       </details>
 
